@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "flat-type-hierarchy",
+        "value": "*",
+        "files": [
+          "docs/api.html"
+        ],
+        "createdAt": "2026-10-07T06:11:15.834Z",
+        "reason": "Agent: browser-verified desktop and mobile heading sizes are 32px, 24px and 18.72px with 16px body; adjacent heading ratios exceed 1.25. Detector omits browser default heading sizes."
+      }
+    ]
+  }
+}

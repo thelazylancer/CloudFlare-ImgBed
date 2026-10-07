@@ -172,7 +172,7 @@ export class DiscordAPI {
             });
 
             // Discord 删除成功返回 204 No Content
-            if (response.status === 204 || response.ok) {
+            if (response.status === 404 || response.ok) {
                 return true;
             }
 

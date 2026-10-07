@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="CloudFlare ImgBed 本站 API：上传、Token 权限、文件有效期、访问、列表、删除和清理。">
+  <title>API 文档 · CloudFlare ImgBed</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; line-height: 1.7; }
+    body { max-width: 960px; margin: auto; padding: 24px; }
+    a { color: light-dark(#1756a9, #94c5ff); }
+    a:focus-visible, summary:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+    h1, h2, h3 { line-height: 1.35; }
+    h2 { margin-top: 48px; scroll-margin-top: 24px; }
+    code { font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
+    pre { padding: 16px; background: light-dark(#f3f4f6, #24262b); overflow-x: auto; line-height: 1.6; }
+    pre code { overflow-wrap: normal; }
+    .table-scroll { overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { padding: 10px; border-bottom: 1px solid light-dark(#d1d5db, #555); text-align: left; vertical-align: top; }
+    .note { border-left: 3px solid currentColor; padding-left: 16px; }
+    details { margin-top: 24px; }
+    summary { cursor: pointer; font-weight: 600; }
+    footer { margin-top: 48px; border-top: 1px solid light-dark(#d1d5db, #555); padding-top: 16px; }
+    @media (max-width: 600px) { body { padding: 16px; } th, td { padding: 8px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <nav aria-label="站点导航">
+      <a href="/">返回上传</a>
+      <a href="/adminLogin">管理员登录</a>
+      <a href="https://cfbed.sanyue.de/">上游项目文档</a>
+    </nav>
+    <h1>API 文档</h1>
+    <p>本页说明本站的上传、鉴权、文件访问、列表、删除和过期清理接口。请求地址使用你的图床域名，以下示例用 <code>https://img.example.com</code> 代替。</p>
+    <p class="note"><strong>新上传默认保存 24 小时，临时文件最多 7 天。</strong>到期前可重复访问，没有一次性模式。永久保存需显式申请并具备管理员权限；默认存储渠道仍为 Telegram。</p>
+    <nav aria-label="文档目录">
+      <a href="#quickstart">快速开始</a>
+      <a href="#auth">Token 与权限</a>
+      <a href="#upload">上传参数</a>
+      <a href="#files">访问文件</a>
+      <a href="#session">会话与保存策略</a>
+      <a href="#management">渠道、列表与删除</a>
+      <a href="#cleanup">过期清理</a>
+      <a href="#advanced">分块与直传</a>
+      <a href="#compatibility">旧接口兼容</a>
+    </nav>
+  </header>
+  <main>
+    <section aria-labelledby="quickstart">
+      <h2 id="quickstart">快速开始</h2>
+      <p>使用带 <code>upload</code> 权限的 API Token。把示例域名换成你的域名，并设置 <code>IMGBED_UPLOAD_TOKEN</code>。上传采用 <code>multipart/form-data</code>，文件字段名为 <code>file</code>，每个请求上传一个文件。使用 curl 的 <code>-F</code> 时无需手动设置 Content-Type。</p>
+      <pre><code># 默认保存 24 小时；returnFormat=full 返回完整链接
+curl --fail-with-body \
+  -H "Authorization: Bearer $IMGBED_UPLOAD_TOKEN" \
+  -F "file=@image.jpg" \
+  'https://img.example.com/upload?returnFormat=full'
+
+# 保存 7 天；expiresIn 的单位为秒
+curl --fail-with-body \
+  -H "Authorization: Bearer $IMGBED_UPLOAD_TOKEN" \
+  -F "file=@image.jpg" \
+  'https://img.example.com/upload?returnFormat=full&amp;expiresIn=604800'
+
+# 永久保存；Token 必须同时有 upload 和 manage 权限
+curl --fail-with-body \
+  -H "Authorization: Bearer $IMGBED_ADMIN_TOKEN" \
+  -F "file=@image.jpg" \
+  'https://img.example.com/upload?returnFormat=full&amp;permanent=true'</code></pre>
+      <p>上传成功返回 HTTP 200，响应仍是数组：</p>
+      <pre><code>[
+  {
+    "src": "https://img.example.com/file/example.jpg",
+    "expiresAt": 1791421200000
+  }
+]</code></pre>
+      <p>将 <code>src</code> 用作文件地址。通过 Buffer 排期时，保存时间应覆盖实际发布时间；超过 24 小时的排期应指定更长时间，最多 7 天，或由管理员申请永久保存。</p>
+    </section>
+    <section aria-labelledby="auth">
+      <h2 id="auth">Token 与权限</h2>
+      <p>在管理端的安全设置 → API Token 管理中新建 Token。自动化调用推荐请求头 <code>Authorization: Bearer &lt;TOKEN&gt;</code>；原有直接填写 Token 的 Authorization 格式也保留。</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th scope="col">用途</th><th scope="col">Token 权限</th></tr></thead>
+          <tbody>
+            <tr><td>临时上传（默认 24 小时，最多 7 天）</td><td><code>upload</code></td></tr>
+            <tr><td>永久上传</td><td>同时具有 <code>upload</code> 和 <code>manage</code></td></tr>
+            <tr><td>管理文件列表</td><td><code>list</code></td></tr>
+            <tr><td>删除文件</td><td><code>delete</code></td></tr>
+            <tr><td>过期清理及其他管理操作</td><td><code>manage</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>浏览器可使用已有用户或管理员登录会话上传。旧上传调用的 <code>authCode</code> 查询参数也保留；未设置用户认证时可匿名临时上传。这些身份均不会自动获得永久保存能力。</p>
+      <p>使用管理员会话申请永久，必须先配置完整的管理员用户名和密码，经 <a href="/adminLogin">管理员登录页</a>登录，上传请求携带有效的 <code>admin_session</code> Cookie。仅关闭管理端认证不会获得永久保存权限。管理员上传不传保存参数时也仍为 24 小时。</p>
+      <p>Token 自己的 <code>expiresAt</code> 是 ISO 日期，控制凭据有效期；上传响应的 <code>expiresAt</code> 是文件的到期时间。两者独立，没有新增每个 Token 的文件保存时长设置。</p>
+    </section>
+    <section aria-labelledby="upload">
+      <h2 id="upload">POST /upload</h2>
+      <p>请求体是含 <code>file</code> 的表单。以下参数放在 URL 查询字符串中，保存时间不放在表单字段或 Token 配置中。</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th scope="col">参数</th><th scope="col">默认值</th><th scope="col">说明</th></tr></thead>
+          <tbody>
+            <tr><td><code>expiresIn</code></td><td><code>86400</code></td><td>整数秒数，范围 1–604800，有效期从上传完成时开始。</td></tr>
+            <tr><td><code>permanent</code></td><td><code>false</code></td><td><code>true</code> 申请永久保存；需要管理员会话，或同时具有 upload、manage 权限的 Token。</td></tr>
+            <tr><td><code>returnFormat</code></td><td><code>default</code></td><td><code>default</code> 返回相对路径；<code>full</code> 返回本站完整链接。</td></tr>
+            <tr><td><code>uploadChannel</code></td><td><code>telegram</code></td><td><code>telegram</code>、<code>cfr2</code>、<code>s3</code>、<code>discord</code>、<code>huggingface</code>、<code>webdav</code>。需在站点配置对应渠道。</td></tr>
+            <tr><td><code>channelName</code></td><td>不指定</td><td>选择该类型下已配置的具体渠道名称，查询渠道接口获取可用名称。</td></tr>
+            <tr><td><code>uploadFolder</code></td><td>根目录</td><td>文件目录，例如 <code>twitter/media</code>。查询参数需 URL 编码。</td></tr>
+            <tr><td><code>uploadNameType</code></td><td><code>default</code></td><td>原有命名方式：<code>default</code>、<code>index</code>、<code>origin</code>、<code>short</code>。</td></tr>
+            <tr><td><code>autoRetry</code></td><td><code>true</code></td><td>失败时自动切换可用渠道；传 <code>false</code> 关闭。需要固定存储渠道时可关闭。</td></tr>
+            <tr><td><code>serverCompress</code></td><td>开启</td><td>Telegram 上传中传 <code>false</code> 使用文档方式发送，避免 Telegram 的图片压缩。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><code>permanent=true</code> 与 <code>expiresIn</code> 互斥；重复保存参数、非法布尔值、非整数秒数、超出范围均返回 400。普通身份申请永久返回 403。</p>
+      <h3>响应字段</h3>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th scope="col">字段</th><th scope="col">说明</th></tr></thead>
+          <tbody>
+            <tr><td><code>src</code></td><td>文件地址；默认形如 <code>/file/example.jpg</code>。</td></tr>
+            <tr><td><code>expiresAt</code></td><td>Unix 毫秒时间戳；永久文件为 <code>null</code>。</td></tr>
+            <tr><td><code>publicUrl</code></td><td>可选字段，仅配置公开链接前缀时返回。前缀的有效期行为取决于其指向的服务。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>常见错误</h3>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th scope="col">HTTP 状态</th><th scope="col">含义</th></tr></thead>
+          <tbody>
+            <tr><td>400</td><td>保存参数非法、分块参数不匹配等请求错误。</td></tr>
+            <tr><td>401</td><td>需要上传认证且没有可用凭据；检查 Token 有效期、upload 权限或登录会话。</td></tr>
+            <tr><td>403</td><td>没有永久保存权限，或上传 IP 被封禁。</td></tr>
+            <tr><td>500 / 503</td><td>存储上传失败，或配置、数据库暂不可用。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>保存参数错误的响应是 JSON 对象，例如 <code>{"error":"expiresIn must be an integer between 1 and 604800 seconds"}</code>。其他旧错误可能返回纯文本；先判断 HTTP 状态，再处理响应体。</p>
+    </section>
+    <section aria-labelledby="files">
+      <h2 id="files">GET /file/{文件ID}</h2>
+      <p>使用上传返回的 <code>src</code> 访问文件，支持 HEAD 和 Range 请求，仍受本站原有文件访问策略约束。临时文件使用 <code>Cache-Control: no-store</code>；到期后 GET、HEAD、Range 和图片处理请求返回 404。</p>
+      <pre><code>curl -I 'https://img.example.com/file/example.jpg'</code></pre>
+      <p>到期链接立即失效，物理删除可能滞后。存储渠道自身的公开直链、第三方下载的副本不受本站链接有效期控制。</p>
+      <p>Worker 和 Docker 支持临时文件的图片处理。Pages 仅使用 <code>/cdn-cgi/image</code> 时，临时文件图片转换返回 400，可用 <code>fallback=original</code> 返回原图。</p>
+    </section>
+    <section aria-labelledby="session">
+      <h2 id="session">GET /api/auth/sessionCheck</h2>
+      <p>返回浏览器会话状态及保存策略。可以携带 API Token 查询永久保存能力：</p>
+      <pre><code>curl -H "Authorization: Bearer $IMGBED_UPLOAD_TOKEN" \
+  'https://img.example.com/api/auth/sessionCheck'</code></pre>
+      <p>没有浏览器会话时，示例响应为：</p>
+      <pre><code>{
+  "valid": false,
+  "adminRequired": true,
+  "userRequired": true,
+  "canStorePermanently": false,
+  "defaultRetentionSeconds": 86400,
+  "maxRetentionSeconds": 604800
+}</code></pre>
+      <p><code>adminRequired</code>、<code>userRequired</code> 取决于站点认证配置；有效会话还包含 <code>authType</code>（<code>admin</code> 或 <code>user</code>）。<code>valid</code> 描述浏览器会话，不代表 Token 是否有效；<code>canStorePermanently</code> 描述当前凭据是否可申请永久。该接口不会把 Token 转换成登录会话。</p>
+    </section>
+    <section aria-labelledby="management">
+      <h2 id="management">渠道、列表与删除</h2>
+      <h3>GET /api/channels</h3>
+      <p>查询可用渠道名称和类型；使用可用的 API Token 或本站登录凭据。返回按 <code>telegram</code>、<code>cfr2</code> 等键分组的数组，例如 <code>{"telegram":[{"name":"Telegram_env","type":"TelegramNew"}],"cfr2":[]}</code>，实际还包含其他渠道类型。</p>
+      <pre><code>curl -H "Authorization: Bearer $IMGBED_UPLOAD_TOKEN" \
+  'https://img.example.com/api/channels'</code></pre>
+      <h3>GET /api/manage/list</h3>
+      <p>Token 需要 <code>list</code> 权限，或使用管理员会话。常用查询参数：<code>start</code>（默认 0）、<code>count</code>（默认 50）、<code>dir</code>、<code>search</code>、<code>recursive=true</code>。响应包含 <code>files</code>、<code>directories</code>、<code>totalCount</code> 和 <code>returnedCount</code> 等字段。列表过滤已到期文件。</p>
+      <pre><code>curl -H "Authorization: Bearer $IMGBED_LIST_TOKEN" \
+  'https://img.example.com/api/manage/list?start=0&amp;count=20&amp;dir=twitter'</code></pre>
+      <h3>DELETE /api/manage/delete/{文件ID}</h3>
+      <p>Token 需要 <code>delete</code> 权限，或使用管理员会话。文件 ID 使用列表中的 <code>name</code>，保留目录层级并对各路径段进行 URL 编码；不要填入完整文件 URL。原有 GET 删除调用也保留。</p>
+      <pre><code>curl --fail-with-body -X DELETE \
+  -H "Authorization: Bearer $IMGBED_DELETE_TOKEN" \
+  'https://img.example.com/api/manage/delete/example.jpg'</code></pre>
+      <p>成功响应：<code>{"success":true,"fileId":"example.jpg"}</code>。</p>
+    </section>
+    <section aria-labelledby="cleanup">
+      <h2 id="cleanup">POST /api/manage/cleanupExpired</h2>
+      <p>需要 <code>manage</code> 权限的 Token，或已配置管理员凭据且有效的管理员会话。无需请求体；每次最多扫描 5 条记录并删除已到期文件，自动保存扫描进度。</p>
+      <pre><code>curl --fail-with-body -X POST \
+  -H "Authorization: Bearer $IMGBED_ADMIN_TOKEN" \
+  'https://img.example.com/api/manage/cleanupExpired'</code></pre>
+      <pre><code>{
+  "scanned": 5,
+  "deleted": 2,
+  "failed": 0,
+  "hasMore": true
+}</code></pre>
+      <p><code>scanned</code> 是本轮扫描记录数，<code>deleted</code> 是成功删除数，<code>failed</code> 是删除失败数；<code>hasMore</code> 表示本次扫描尚未遍历完数据库，可继续调用。删除失败时保留记录供后续扫描重试，不代表请求整体失败。</p>
+      <p>Worker 和 Docker 每分钟自动清理。Pages 需外部定时任务调用此接口；到期访问也会触发该文件清理。链接是否失效独立于后台清理进度。</p>
+      <p>Telegram Bot API 仅能删除发送后不足 48 小时的消息。保存 2–7 天的媒体需配合聊天原生自动删除；超过 48 小时，本站链接仍失效并清理本地引用，远端媒体依赖聊天自动删除。临时与永久文件建议使用不同聊天。</p>
+    </section>
+    <section aria-labelledby="advanced">
+      <h2 id="advanced">分块上传与 HuggingFace 直传</h2>
+      <p>原接口保留，上传步骤使用同样的上传认证。普通文件可直接使用 <code>POST /upload</code>。</p>
+      <details>
+        <summary>分块上传流程</summary>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th scope="col">步骤</th><th scope="col">POST 接口</th><th scope="col">表单字段</th></tr></thead>
+            <tbody>
+              <tr><td>初始化</td><td><code>/upload?initChunked=true</code></td><td><code>originalFileName</code>、<code>originalFileType</code>、<code>totalChunks</code>。</td></tr>
+              <tr><td>上传每块</td><td><code>/upload?chunked=true</code></td><td><code>file</code>、<code>chunkIndex</code>（从 0 开始）、<code>uploadId</code>、<code>totalChunks</code>、<code>originalFileName</code>、<code>originalFileType</code>。</td></tr>
+              <tr><td>合并</td><td><code>/upload?chunked=true&amp;merge=true</code></td><td><code>uploadId</code>、<code>totalChunks</code>、<code>originalFileName</code>、<code>originalFileType</code>。</td></tr>
+              <tr><td>取消并清理分块</td><td><code>/upload?cleanup=true&amp;uploadId={ID}&amp;totalChunks={数量}</code></td><td>无需文件。</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>初始化响应返回 <code>uploadId</code>。初始化时传入 <code>expiresIn</code> 或 <code>permanent=true</code> 固定保存策略，合并时不能改为其他值，永久合并会再次验证权限。文件有效期从合并完成时开始，合并响应仍为含 <code>src</code>、<code>expiresAt</code> 的数组。分块上传会话有效期为 1 小时，独立于文件有效期。WebDAV 不支持分块上传。</p>
+      </details>
+      <details>
+        <summary>HuggingFace 直传流程</summary>
+        <ol>
+          <li><code>POST /upload/huggingface/getUploadUrl</code>：JSON 请求传 <code>fileSize</code>、<code>fileName</code>、<code>sha256</code>、<code>fileSample</code> 等字段，获取上传信息。</li>
+          <li>按返回的上传信息向存储服务发送文件；多段上传按返回的完成地址提交，本站代理接口为 <code>POST /upload/huggingface/completeMultipart</code>。</li>
+          <li><code>POST /upload/huggingface/commitUpload?expiresIn=86400</code>：提交 JSON，必需字段 <code>fullId</code>、<code>filePath</code>、<code>sha256</code>、<code>fileSize</code>；可附 <code>fileName</code>、<code>fileType</code>、<code>channelName</code>。</li>
+        </ol>
+        <p>保存参数在 commitUpload 的查询字符串中指定，规则与普通上传相同。响应是对象，包含 <code>success</code>、<code>src</code>、<code>expiresAt</code>、<code>fileUrl</code>、<code>fullId</code>，配置公开前缀时还包含 <code>publicUrl</code>。需要受本站有效期控制时使用 <code>src</code>；<code>fileUrl</code> 是存储服务直链。</p>
+      </details>
+    </section>
+    <section aria-labelledby="compatibility">
+      <h2 id="compatibility">旧接口兼容</h2>
+      <ul>
+        <li>上传路径仍为 <code>POST /upload</code>，文件字段仍为 <code>file</code>，原鉴权方式和渠道参数保留。</li>
+        <li>普通上传仍返回数组，原 <code>src</code> 及条件性 <code>publicUrl</code> 保留，新增 <code>expiresAt</code>。读取 <code>response[0].src</code> 的旧脚本可继续使用；严格校验响应字段的客户端需允许新增字段。</li>
+        <li><strong>保存行为有变化：</strong>不传保存参数的新上传默认 24 小时，到期后链接返回 404。依赖永久链接的调用需显式传 <code>permanent=true</code> 并使用对应管理员凭据。</li>
+        <li>已有旧文件缺少到期字段，继续按永久文件处理，不批量迁移。没有一次性模式，也没有按 Token 单独设置文件时长的配置。</li>
+        <li><code>sessionCheck</code> 新增保存策略字段；过期清理接口是新增接口，原接口没有删除或改名。</li>
+      </ul>
+    </section>
+  </main>
+  <footer>
+    <p>本页随站点版本发布。部署、存储配置及其他上游功能可查阅<a href="https://cfbed.sanyue.de/">上游项目文档</a>；本站文件有效期及兼容行为以本页为准。</p>
+  </footer>
+</body>
+</html>

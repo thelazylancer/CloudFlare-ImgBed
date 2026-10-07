@@ -1,3 +1,4 @@
+import { storeUploadedFile } from '../utils/fileRetention.js';
 /* ======= 客户端分块上传处理 ======= */
 import { createResponse, selectConsistentChannel, getUploadIp, getIPAddress, buildUniqueFileId, endUpload } from './uploadTools';
 import { TelegramAPI } from '../utils/storage/telegramAPI';
@@ -48,6 +49,7 @@ export async function initializeChunkedUpload(context) {
             totalChunks,
             uploadChannel,
             channelName,
+            retention: context.retention,
             uploadIp,
             ipAddress,
             status: 'initialized',
@@ -623,6 +625,9 @@ async function uploadSingleChunkToTelegram(context, chunkData, chunkIndex, total
         return {
             success: true,
             fileId: chunkInfo.file_id,
+            messageId: chunkInfo.message_id,
+            chatId: chunkInfo.chat_id,
+            messageDate: chunkInfo.message_date,
             size: chunkInfo.file_size,
             fileName: chunkFileName,
             uploadTime: Date.now(),
@@ -1238,6 +1243,9 @@ export async function uploadLargeFileToTelegram(context, file, fullId, metadata,
             chunks.push({
                 index: i,
                 fileId: chunkInfo.file_id,
+                messageId: chunkInfo.message_id,
+                chatId: chunkInfo.chat_id,
+                messageDate: chunkInfo.message_date,
                 size: chunkInfo.file_size,
                 fileName: chunkFileName
             });
@@ -1267,7 +1275,7 @@ export async function uploadLargeFileToTelegram(context, file, fullId, metadata,
         }
 
         // 写入最终的数据库记录，分片信息作为value
-        await db.put(fullId, chunksData, { metadata });
+        await storeUploadedFile(context, fullId, chunksData, metadata);
 
         // 异步结束上传
         waitUntil(endUpload(context, fullId, metadata));
@@ -1276,7 +1284,7 @@ export async function uploadLargeFileToTelegram(context, file, fullId, metadata,
         const pageConfig = await fetchPageConfig(env);
         const urlPrefixConfig = pageConfig.config?.find(c => c.id === 'urlPrefix');
         const urlPrefix = urlPrefixConfig?.value || '';
-        const responseBody = [{ 'src': returnLink }];
+        const responseBody = [{ src: returnLink, expiresAt: metadata.ExpiresAt }];
         if (urlPrefix) {
             responseBody[0].publicUrl = `${urlPrefix.replace(/\/+$/, '')}/${fullId}`;
         }

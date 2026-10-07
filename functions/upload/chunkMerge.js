@@ -1,3 +1,4 @@
+import { storeUploadedFile, authorizeRetention, parseRetention, DEFAULT_RETENTION_SECONDS, retentionErrorResponse } from '../utils/fileRetention.js';
 /* ========== 分块合并处理 ========== */
 import { createResponse, getUploadIp, getIPAddress, selectConsistentChannel, buildUniqueFileId, endUpload, sanitizeUploadFolder } from './uploadTools';
 import { retryFailedChunks, cleanupFailedMultipartUploads, checkChunkUploadStatuses, cleanupChunkData, cleanupUploadSession } from './chunkUpload';
@@ -43,6 +44,18 @@ export async function handleChunkMerge(context) {
         // 检查会话是否过期
         if (Date.now() > sessionInfo.expiresAt) {
             return createResponse('Error: Upload session expired', { status: 410 });
+        }
+
+        // Retention is fixed at initialization; merge must still have permanent-storage privileges.
+        const retention = Object.hasOwn(sessionInfo, 'retention') ? sessionInfo.retention : DEFAULT_RETENTION_SECONDS;
+        if ((url.searchParams.has('expiresIn') || url.searchParams.has('permanent')) &&
+            parseRetention(url.searchParams) !== retention) {
+            return createResponse('Error: Retention parameters do not match the upload session', { status: 400 });
+        }
+        try {
+            context.retention = await authorizeRetention(context, retention);
+        } catch (error) {
+            return retentionErrorResponse(error);
         }
 
         // 使用会话中的上传渠道，或者从URL参数获取
@@ -298,7 +311,7 @@ async function mergeR2ChunksInfo(context, uploadId, completedChunks, metadata) {
         await db.delete(multipartKey);
 
         // 写入数据库
-        await db.put(finalFileId, "", { metadata });
+        await storeUploadedFile(context, finalFileId, "", metadata);
 
         // 结束上传
         waitUntil(endUpload(context, finalFileId, metadata));
@@ -314,7 +327,7 @@ async function mergeR2ChunksInfo(context, uploadId, completedChunks, metadata) {
 
         return {
             success: true,
-            result: [{ 'src': updatedReturnLink }]
+            result: [{ src: updatedReturnLink, expiresAt: metadata.ExpiresAt }]
         };
 
     } catch (error) {
@@ -396,7 +409,7 @@ async function mergeS3ChunksInfo(context, uploadId, completedChunks, metadata) {
         await db.delete(multipartKey);
 
         // 写入数据库
-        await db.put(finalFileId, "", { metadata });
+        await storeUploadedFile(context, finalFileId, "", metadata);
 
         // 异步结束上传
         waitUntil(endUpload(context, finalFileId, metadata));
@@ -412,7 +425,7 @@ async function mergeS3ChunksInfo(context, uploadId, completedChunks, metadata) {
 
         return {
             success: true,
-            result: [{ src: updatedReturnLink }]
+            result: [{ src: updatedReturnLink, expiresAt: metadata.ExpiresAt }]
         };
 
     } catch (error) {
@@ -450,6 +463,10 @@ async function mergeTelegramChunksInfo(context, uploadId, completedChunks, metad
         const chunks = sortedChunks.map(chunk => ({
             index: chunk.index,
             fileId: chunk.uploadResult.fileId,
+            messageId: chunk.uploadResult.messageId,
+            chatId: chunk.uploadResult.chatId,
+            messageDate: chunk.uploadResult.messageDate,
+            channelName: chunk.uploadResult.tgChannel,
             size: chunk.uploadResult.size,
             fileName: chunk.uploadResult.fileName
         }));
@@ -469,7 +486,7 @@ async function mergeTelegramChunksInfo(context, uploadId, completedChunks, metad
         const chunksData = JSON.stringify(chunks);
 
         // 写入数据库
-        await db.put(finalFileId, chunksData, { metadata });
+        await storeUploadedFile(context, finalFileId, chunksData, metadata);
 
         // 异步结束上传
         waitUntil(endUpload(context, finalFileId, metadata));
@@ -485,7 +502,7 @@ async function mergeTelegramChunksInfo(context, uploadId, completedChunks, metad
 
         return {
             success: true,
-            result: [{ 'src': updatedReturnLink }]
+            result: [{ src: updatedReturnLink, expiresAt: metadata.ExpiresAt }]
         };
 
     } catch (error) {
@@ -523,6 +540,7 @@ async function mergeDiscordChunksInfo(context, uploadId, completedChunks, metada
         const chunks = sortedChunks.map(chunk => ({
             index: chunk.index,
             messageId: chunk.uploadResult.messageId,
+            channelName: chunk.uploadResult.discordChannel,
             // 注意：不存储 attachmentId 和 url，它们会在约24小时后过期
             size: chunk.uploadResult.size,
             fileName: chunk.uploadResult.fileName
@@ -543,7 +561,7 @@ async function mergeDiscordChunksInfo(context, uploadId, completedChunks, metada
         const chunksData = JSON.stringify(chunks);
 
         // 写入数据库
-        await db.put(finalFileId, chunksData, { metadata });
+        await storeUploadedFile(context, finalFileId, chunksData, metadata);
 
         // 异步结束上传
         waitUntil(endUpload(context, finalFileId, metadata));
@@ -559,7 +577,7 @@ async function mergeDiscordChunksInfo(context, uploadId, completedChunks, metada
 
         return {
             success: true,
-            result: [{ 'src': updatedReturnLink }]
+            result: [{ src: updatedReturnLink, expiresAt: metadata.ExpiresAt }]
         };
 
     } catch (error) {

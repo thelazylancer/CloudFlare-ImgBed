@@ -1,5 +1,6 @@
 import { fetchOthersConfig } from "../utils/sysConfig";
 import { readIndex } from "../utils/indexManager";
+import { isFileExpired } from '../utils/fileRetention.js';
 import { detectDevice, resolveOrientation, addClientHintsHeaders } from "./adaptive.js";
 
 // CORS 跨域响应头
@@ -91,6 +92,7 @@ export async function onRequest(context) {
 
     // 调用randomFileList接口，读取KV数据库中的所有记录
     let allRecords = await getRandomFileList(context, requestUrl, dir);
+    allRecords = allRecords.filter(item => !isFileExpired(item));
 
     // 筛选出符合fileType要求的记录
     allRecords = allRecords.filter(item => { return fileType.some(type => item.FileType?.includes(type)) });
@@ -126,6 +128,7 @@ export async function onRequest(context) {
 
     // 构建响应头：添加 CORS 跨域响应头，自适应模式下添加 Client Hints 协商头
     const responseHeaders = new Headers(corsHeaders);
+    responseHeaders.set('Cache-Control', 'private, no-store, max-age=0');
     if (isAutoMode) {
         addClientHintsHeaders(responseHeaders);
     }
@@ -188,6 +191,7 @@ async function getRandomFileList(context, url, dir) {
             name: item.id,
             FileType: item.metadata?.FileType,
             Width: item.metadata?.Width,
+            ExpiresAt: item.metadata?.ExpiresAt,
             Height: item.metadata?.Height
         }
     });

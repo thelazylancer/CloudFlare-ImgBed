@@ -134,6 +134,14 @@ export async function transformImageRequestViaUrl(context) {
     if (!imageTransform?.requested || hasConfiguredImageProcessor(env)) {
         return null;
     }
+    // A /cdn-cgi/image redirect would expose an independently cached URL past expiry.
+    if (context.fileAccess?.temporary) {
+        if (imageTransform.fallback === 'original') {
+            context.imageTransform = { requested: false };
+            return null;
+        }
+        return imageTransformError('Image resizing is unavailable for temporary files on this deployment', 400);
+    }
 
     // Image Resizing fetches the source through this same file route. Never
     // start another transformation for that internal source request.

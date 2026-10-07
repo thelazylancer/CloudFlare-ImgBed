@@ -126,6 +126,10 @@ CloudFlare ImgBed 是支持 Docker 与 Serverless 部署的自建图床和文件
 
 **[查看完整文档 →](https://cfbed.sanyue.de)**
 
+本站接口说明：[API 文档](docs/api.html)，部署后访问 `/api-docs.html`，或从上传页菜单打开“API 文档”。包含 Token 权限、上传参数、保存期限、响应示例及旧接口兼容说明。
+
+新上传默认 24 小时，临时文件最多 7 天，管理员可显式选择永久：[文件有效期与清理说明](docs/file-retention.md)。
+
 ## 📝 更新日志
 
 了解项目的最新功能、问题修复、兼容性变更和升级注意事项。

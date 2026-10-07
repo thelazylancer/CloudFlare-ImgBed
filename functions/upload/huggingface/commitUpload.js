@@ -1,3 +1,4 @@
+import { storeUploadedFile, getUploadRetention, retentionErrorResponse } from '../../utils/fileRetention.js';
 /**
  * HuggingFace 大文件提交 API
  * 
@@ -13,12 +14,19 @@ import { userAuthCheck, UnauthorizedResponse } from '../../utils/auth/userAuth.j
 export async function onRequestPost(context) {
     const { request, env, waitUntil } = context;
     const url = new URL(request.url);
+    context.url = url;
 
     try {
         // 鉴权
         const requiredPermission = 'upload';
         if (!await userAuthCheck(env, url, request, requiredPermission)) {
             return UnauthorizedResponse('Unauthorized');
+        }
+
+        try {
+            context.retention = await getUploadRetention(context);
+        } catch (error) {
+            return retentionErrorResponse(error);
         }
 
         const body = await request.json();
@@ -123,7 +131,7 @@ export async function onRequestPost(context) {
 
         // 写入数据库
         const db = getDatabase(env);
-        await db.put(fullId, "", { metadata });
+        await storeUploadedFile(context, fullId, "", metadata);
 
         // 结束上传（更新索引等）
         const uploadContext = {
@@ -139,6 +147,7 @@ export async function onRequestPost(context) {
         const responseBody = {
             success: true,
             src: returnLink,
+            expiresAt: metadata.ExpiresAt,
             fileUrl,
             fullId
         };

@@ -498,7 +498,14 @@ export class HuggingFaceAPI {
             body
         });
 
-        return response.ok;
+        if (response.ok) return true;
+        // A previous cleanup attempt may have deleted the file before its DB write failed.
+        // Only EntryNotFound proves absence; a missing/private repository must remain retryable.
+        const existing = await fetch(this.getFileURL(filePath), {
+            method: 'HEAD',
+            headers: { 'Authorization': `Bearer ${this.token}` },
+        });
+        return existing.status === 404 && existing.headers.get('X-Error-Code') === 'EntryNotFound';
     }
 
     /**

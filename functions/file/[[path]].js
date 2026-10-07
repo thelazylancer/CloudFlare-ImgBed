@@ -9,6 +9,8 @@ import {
     returnWithCheck, return404, returnBlockImg, isDomainAllowed, FILE_CACHE_CONTROL
 } from './fileTools';
 import { getDatabase } from '../utils/databaseAdapter.js';
+import { isFileExpired, isTemporaryFile } from '../utils/fileRetention.js';
+import { deleteExpiredFile } from '../utils/retentionCleanup.js';
 import { authenticate, AUTH_SCOPE } from '../utils/auth/authCore.js';
 import {
     resolveDiscordCredentials,
@@ -54,10 +56,6 @@ export async function onRequest(context) {  // Contents of context object
     context.url = url;
 
     context.imageTransform = parseImageTransform(url, securityConfig.access);
-    const imageTransformError = validateImageTransformRequest(request, context.imageTransform);
-    if (imageTransformError) {
-        return imageTransformError;
-    }
 
     const Referer = request.headers.get('Referer')
     context.Referer = Referer;
@@ -72,8 +70,16 @@ export async function onRequest(context) {  // Contents of context object
     // 从数据库中获取图片记录
     const db = getDatabase(env);
     const imgRecord = await db.getWithMetadata(fileId);
-    if (!imgRecord) {
-        return new Response('Error: Image Not Found', { status: 404 });
+    if (!imgRecord || (imgRecord.value === null && !imgRecord.metadata)) {
+        return new Response('Error: Image Not Found', { status: 404, headers: { 'Cache-Control': FILE_CACHE_CONTROL.NO_STORE } });
+    }
+    if (isFileExpired(imgRecord.metadata)) {
+        waitUntil(deleteExpiredFile(env, fileId, url));
+        return new Response('Error: File expired', { status: 404, headers: { 'Cache-Control': FILE_CACHE_CONTROL.NO_STORE } });
+    }
+    const imageTransformError = validateImageTransformRequest(request, context.imageTransform);
+    if (imageTransformError) {
+        return imageTransformError;
     }
 
     // 如果metadata不存在，只可能是之前未设置KV，且存储在Telegraph上的图片
@@ -89,6 +95,10 @@ export async function onRequest(context) {  // Contents of context object
     let accessRes = await returnWithCheck(context, imgRecord);
     if (accessRes.status !== 200) {
         return accessRes; // 如果不可访问，直接返回
+    }
+    if (isTemporaryFile(imgRecord.metadata)) {
+        context.fileAccess.cacheControl = FILE_CACHE_CONTROL.NO_STORE;
+        context.fileAccess.temporary = true;
     }
 
     const imageSourceValidation = validateImageTransformSource(context.imageTransform, env, fileType, fileName);
@@ -145,7 +155,10 @@ export async function onRequest(context) {  // Contents of context object
     if (imgRecord.metadata?.Channel === 'External') {
         if (!context.imageTransform.requested) {
             // 未请求图片处理时维持原有的外链重定向逻辑
-            return Response.redirect(imgRecord.metadata?.ExternalLink, 302);
+            return new Response(null, {
+                status: 302,
+                headers: { Location: imgRecord.metadata?.ExternalLink, 'Cache-Control': getFileCacheControl(context) },
+            });
         }
 
         try {

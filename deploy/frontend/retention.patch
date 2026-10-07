@@ -1,0 +1,270 @@
+diff --git a/src/components/upload/UploadForm.vue b/src/components/upload/UploadForm.vue
+index caa2428..65bd823 100644
+--- a/src/components/upload/UploadForm.vue
++++ b/src/components/upload/UploadForm.vue
+@@ -242,6 +242,7 @@ props: {
+         default: true,
+         required: false
+     },
++    retentionSeconds: { type: Number, default: 86400 },
+     uploadChannel: {
+         type: String,
+         default: 'telegram',
+@@ -354,6 +355,9 @@ watch: {
+     }
+ },
+ computed: {
++    retentionQuery() {
++        return this.retentionSeconds === 0 ? '&permanent=true' : '&expiresIn=' + this.retentionSeconds
++    },
+     ...mapGetters([
+         'storeAutoReUpload'
+     ]),
+@@ -579,6 +583,7 @@ methods: {
+     },
+     // 单文件上传
+     async uploadSingleFile(file) {
++        const retentionQuery = this.retentionQuery
+         const fileItem = this.fileList.find(item => item.uid === file.file.uid)
+         if (!fileItem) return // 文件已被删除
+         
+@@ -613,7 +618,7 @@ methods: {
+ 
+         axios({
+             url: '/upload' + 
+-                '?serverCompress=' + needServerCompress + 
++                '?serverCompress=' + needServerCompress + retentionQuery + 
+                 '&uploadChannel=' + uploadChannel + 
+                 (this.channelName ? '&channelName=' + encodeURIComponent(this.channelName) : '') +
+                 '&uploadNameType=' + uploadNameType + 
+@@ -652,6 +657,7 @@ methods: {
+     },
+     // 分块上传
+     async uploadFileInChunks(file) {
++        const retentionQuery = this.retentionQuery
+         const fileItem = this.fileList.find(item => item.uid === file.file.uid)
+         if (!fileItem) return // 文件已被删除
+         
+@@ -698,7 +704,7 @@ methods: {
+ 
+             const initResponse = await axios({
+                 url: '/upload' + 
+-                    '?serverCompress=' + needServerCompress + 
++                    '?serverCompress=' + needServerCompress + retentionQuery + 
+                     '&uploadChannel=' + uploadChannel + 
+                     (this.channelName ? '&channelName=' + encodeURIComponent(this.channelName) : '') +
+                     '&uploadNameType=' + uploadNameType + 
+@@ -755,7 +761,7 @@ methods: {
+                     try {
+                         await axios({
+                             url: '/upload' + 
+-                                '?serverCompress=' + needServerCompress + 
++                                '?serverCompress=' + needServerCompress + retentionQuery + 
+                                 '&uploadChannel=' + uploadChannel + 
+                                 (this.channelName ? '&channelName=' + encodeURIComponent(this.channelName) : '') +
+                                 '&uploadNameType=' + uploadNameType + 
+@@ -845,7 +851,7 @@ methods: {
+ 
+             const response = await axios({
+                 url: '/upload' + 
+-                    '?serverCompress=' + needServerCompress + 
++                    '?serverCompress=' + needServerCompress + retentionQuery + 
+                     '&uploadChannel=' + uploadChannel + 
+                     (this.channelName ? '&channelName=' + encodeURIComponent(this.channelName) : '') +
+                     '&uploadNameType=' + uploadNameType + 
+@@ -1428,6 +1434,7 @@ methods: {
+     // HuggingFace 大文件直传（绕过 CF Workers 限制）
+     // 流程：前端计算 SHA256 → 获取 S3 上传 URL → 直传到 S3 → 提交文件引用
+     async uploadToHuggingFaceDirect(file) {
++        const retentionQuery = this.retentionQuery
+         const fileItem = this.fileList.find(item => item.uid === file.file.uid);
+         if (!fileItem) return;
+ 
+@@ -1522,7 +1529,7 @@ methods: {
+             file.onProgress({ percent: 95, file: file.file });
+             console.log('Committing file...');
+             const commitRes = await axios({
+-                url: '/upload/huggingface/commitUpload',
++                url: '/upload/huggingface/commitUpload?' + retentionQuery.slice(1),
+                 method: 'post',
+                 data: {
+                     fullId: uploadInfo.fullId,
+diff --git a/src/components/upload/UploadSettingsDialog.vue b/src/components/upload/UploadSettingsDialog.vue
+index 99d013d..8883612 100644
+--- a/src/components/upload/UploadSettingsDialog.vue
++++ b/src/components/upload/UploadSettingsDialog.vue
+@@ -56,6 +56,23 @@
+             </div>
+         </div>
+         
++        <div class="dialog-section">
++            <div class="section-header">
++                <span class="section-title">{{ $t('uploadSettings.retention') }}</span>
++            </div>
++            <div class="section-content">
++                <div class="setting-item">
++                    <label for="file-retention" class="setting-label">{{ $t('uploadSettings.retention') }}</label>
++                    <el-select id="file-retention" :model-value="retentionSeconds" @update:model-value="$emit('update:retentionSeconds', $event)" class="setting-input">
++                        <el-option v-for="days in 7" :key="days" :value="days * 86400" :label="$t(days === 1 ? 'uploadSettings.retentionDefault' : 'uploadSettings.retentionDays', { days })" />
++                        <el-option v-if="canStorePermanently" :value="0" :label="$t('uploadSettings.retentionPermanent')" />
++                    </el-select>
++                </div>
++                <p>{{ $t('uploadSettings.retentionHelp') }}</p>
++                <el-link v-if="!canStorePermanently" href="/adminLogin">{{ $t('uploadSettings.retentionAdminLogin') }}</el-link>
++            </div>
++        </div>
++
+         <!-- 文件命名方式 -->
+         <div class="dialog-section">
+             <div class="section-header">
+@@ -215,6 +232,8 @@ export default {
+     props: {
+         modelValue: { type: Boolean, default: false },
+         uploadChannel: { type: String, default: 'telegram' },
++        retentionSeconds: { type: Number, default: 86400 },
++        canStorePermanently: { type: Boolean, default: false },
+         channelName: { type: String, default: '' },
+         availableChannels: { type: Object, default: () => ({}) },
+         currentChannelList: { type: Array, default: () => [] },
+@@ -230,6 +249,7 @@ export default {
+     emits: [
+         'update:modelValue',
+         'update:uploadChannel',
++        'update:retentionSeconds',
+         'update:channelName',
+         'update:uploadFolder',
+         'update:autoRetry',
+diff --git a/src/locales/en.json b/src/locales/en.json
+index bfbcf31..7033c2c 100644
+--- a/src/locales/en.json
++++ b/src/locales/en.json
+@@ -36,7 +36,7 @@
+     "manage": "Management",
+     "logout": "Logout",
+     "logoutSuccess": "Logged out",
+-    "viewDocs": "Documentation",
++    "viewDocs": "API Documentation",
+     "switchUploadMethod": "Switch Upload Method",
+     "copyAll": "Copy All",
+     "retryFailed": "Retry Failed",
+@@ -72,6 +72,12 @@
+     "imageLoadFailed": "Image load failed"
+   },
+   "uploadSettings": {
++    "retention": "Keep files for",
++    "retentionDefault": "24 hours (default)",
++    "retentionDays": "{days} days",
++    "retentionPermanent": "Permanently",
++    "retentionHelp": "Links can be read repeatedly until expiry. Up to 7 days; admins can choose permanent storage.",
++    "retentionAdminLogin": "Sign in as admin for permanent storage",
+     "title": "Upload Settings",
+     "uploadChannel": "Upload Channel",
+     "channelType": "Channel Type",
+diff --git a/src/locales/zh-CN.json b/src/locales/zh-CN.json
+index ec7f114..1e6e0f1 100644
+--- a/src/locales/zh-CN.json
++++ b/src/locales/zh-CN.json
+@@ -36,7 +36,7 @@
+     "manage": "系统管理",
+     "logout": "退出登录",
+     "logoutSuccess": "已退出登录",
+-    "viewDocs": "查看文档",
++    "viewDocs": "API 文档",
+     "switchUploadMethod": "切换上传方式",
+     "copyAll": "整体复制",
+     "retryFailed": "失败重试",
+@@ -73,6 +73,12 @@
+     "imageLoadFailed": "图片加载失败"
+   },
+   "uploadSettings": {
++    "retention": "保存时间",
++    "retentionDefault": "24 小时（默认）",
++    "retentionDays": "{days} 天",
++    "retentionPermanent": "永久保存",
++    "retentionHelp": "到期前可重复访问，到期后链接失效。最长 7 天，管理员可选择永久保存。",
++    "retentionAdminLogin": "登录管理端以使用永久保存",
+     "title": "上传设置",
+     "uploadChannel": "上传渠道",
+     "channelType": "渠道类型",
+diff --git a/src/views/UploadHome.vue b/src/views/UploadHome.vue
+index cf814a6..e5a6719 100644
+--- a/src/views/UploadHome.vue
++++ b/src/views/UploadHome.vue
+@@ -155,6 +155,7 @@
+             :customerCompress="customerCompress" 
+             :compressQuality="compressQuality"
+             :compressBar="compressBar"
++            :retentionSeconds="retentionSeconds"
+             :serverCompress="serverCompress"
+             :uploadChannel="uploadChannel"
+             :channelName="channelName"
+@@ -231,6 +232,8 @@
+             v-model:customerCompress="customerCompress"
+             v-model:compressBar="compressBar"
+             v-model:compressQuality="compressQuality"
++            v-model:retentionSeconds="retentionSeconds"
++            :canStorePermanently="canStorePermanently"
+             v-model:serverCompress="serverCompress"
+         />
+     </div>
+@@ -275,6 +278,8 @@ export default {
+             compressQuality: 4, //压缩后大小
+             compressBar: 5, //压缩阈值
+             convertToWebp: false, //转换为WebP格式
++            retentionSeconds: 86400,
++            canStorePermanently: false,
+             serverCompress: true, //服务器端压缩
+             uploadChannel: '', //上传渠道
+             channelName: '', //指定的渠道名称
+@@ -297,6 +302,9 @@ export default {
+         }
+     },
+     watch: {
++        showCompressDialog(visible) {
++            if (visible) this.fetchRetentionPolicy()
++        },
+         customerCompress(val) {
+             this.updateCompressConfig('customerCompress', val)
+         },
+@@ -418,6 +426,7 @@ export default {
+         this.uploadMethod = this.storeUploadMethod
+         // 获取可用渠道列表
+         this.fetchAvailableChannels()
++        this.fetchRetentionPolicy()
+         // 读取用户设置的上传文件夹
+         this.uploadFolder = this.storeUploadFolder || this.userConfig?.defaultUploadFolder || ''
+ 
+@@ -446,6 +455,15 @@ export default {
+         DirectorySuggestionInput
+     },
+     methods: {
++        async fetchRetentionPolicy() {
++            try {
++                const response = await axios.get('/api/auth/sessionCheck', { withCredentials: true })
++                this.canStorePermanently = response.data.canStorePermanently === true
++            } catch {
++                this.canStorePermanently = false
++            }
++            if (!this.canStorePermanently && this.retentionSeconds === 0) this.retentionSeconds = 86400
++        },
+         // 获取可用渠道列表
+         async fetchAvailableChannels() {
+             try {
+@@ -595,7 +613,7 @@ export default {
+             } else if (command === 'toggleUploadMethod') {
+                 this.handleChangeUploadMethod()
+             } else if (command === 'viewDocs') {
+-                window.open('https://cfbed.sanyue.de/qa/', '_blank')
++                window.open('/api-docs.html', '_blank', 'noopener')
+             } else if (command === 'showHistory') {
+                 this.showHistory = true
+             } else if (command === 'showAnnouncement') {
+@@ -607,7 +625,7 @@ export default {
+         },
+         handleDesktopMenuCommand(command) {
+             if (command === 'viewDocs') {
+-                window.open('https://cfbed.sanyue.de/qa/', '_blank')
++                window.open('/api-docs.html', '_blank', 'noopener')
+             } else if (command === 'showHistory') {
+                 this.showHistory = true
+             } else if (command === 'showAnnouncement') {

@@ -1,3 +1,4 @@
+import { storeUploadedFile, getUploadRetention, retentionErrorResponse } from '../utils/fileRetention.js';
 import { userAuthCheck, UnauthorizedResponse } from "../utils/auth/userAuth";
 import { fetchUploadConfig, fetchSecurityConfig, fetchPageConfig } from "../utils/sysConfig";
 import {
@@ -49,6 +50,12 @@ export async function onRequest(context) {  // Contents of context object
         const uploadId = url.searchParams.get('uploadId');
         const totalChunks = parseInt(url.searchParams.get('totalChunks')) || 0;
         return await handleCleanupRequest(context, uploadId, totalChunks);
+    }
+
+    try {
+        context.retention = await getUploadRetention(context);
+    } catch (error) {
+        return retentionErrorResponse(error);
     }
 
     // 检查是否为初始化分块上传请求
@@ -273,7 +280,7 @@ async function processFileUpload(context, formdata = null) {
 
 // 构建上传成功响应，自动附带 publicUrl（如果已配置）
 function buildUploadResponse(context, returnLink) {
-    const result = { src: returnLink };
+    const result = { src: returnLink, expiresAt: context.fileExpiresAt };
     if (context.publicUrl) {
         result.publicUrl = context.publicUrl;
     }
@@ -325,9 +332,7 @@ async function uploadFileToCloudflareR2(context, fullId, metadata, returnLink) {
 
     // 写入数据库
     try {
-        await db.put(fullId, "", {
-            metadata: metadata,
-        });
+        await storeUploadedFile(context, fullId, "", metadata);
     } catch (error) {
         return createResponse('Error: Failed to write to database', { status: 500 });
     }
@@ -408,7 +413,7 @@ async function uploadFileToS3(context, fullId, metadata, returnLink) {
         // 图像审查
         if (uploadModerate && uploadModerate.enabled) {
             try {
-                await db.put(fullId, "", { metadata });
+                await storeUploadedFile(context, fullId, "", metadata);
             } catch {
                 return createResponse("Error: Failed to write to KV database", { status: 500 });
             }
@@ -420,7 +425,7 @@ async function uploadFileToS3(context, fullId, metadata, returnLink) {
 
         // 写入数据库
         try {
-            await db.put(fullId, "", { metadata });
+            await storeUploadedFile(context, fullId, "", metadata);
         } catch {
             return createResponse("Error: Failed to write to database", { status: 500 });
         }
@@ -528,7 +533,6 @@ async function uploadFileToTelegram(context, fullId, metadata, fileExt, fileName
         metadata.FileSize = (fileInfo.file_size / 1024 / 1024).toFixed(2);
 
         // 将响应返回给客户端
-        res = buildUploadResponse(context, returnLink);
 
 
         // 图像审查（使用代理域名或官方域名）
@@ -542,11 +546,13 @@ async function uploadFileToTelegram(context, fullId, metadata, fileExt, fileName
             metadata.ChannelName = tgChannel.name;
 
             metadata.TgFileId = id;
-            await db.put(fullId, "", {
-                metadata: metadata,
-            });
+            metadata.TgMessageId = fileInfo.message_id;
+            metadata.TgMessageChatId = fileInfo.chat_id;
+            metadata.TgMessageDate = fileInfo.message_date;
+            await storeUploadedFile(context, fullId, "", metadata);
+            res = buildUploadResponse(context, returnLink);
         } catch (error) {
-            res = createResponse('Error: Failed to write to KV database', { status: 500 });
+            return createResponse('Error: Failed to write to KV database', { status: 500 });
         }
 
         // 结束上传
@@ -577,9 +583,7 @@ async function uploadFileToExternal(context, fullId, metadata, returnLink) {
     metadata.ExternalLink = extUrl;
     // 写入KV数据库
     try {
-        await db.put(fullId, "", {
-            metadata: metadata,
-        });
+        await storeUploadedFile(context, fullId, "", metadata);
     } catch (error) {
         return createResponse('Error: Failed to write to KV database', { status: 500 });
     }
@@ -659,7 +663,7 @@ async function uploadFileToDiscord(context, fullId, metadata, returnLink) {
 
         // 写入 KV 数据库
         try {
-            await db.put(fullId, "", { metadata });
+            await storeUploadedFile(context, fullId, "", metadata);
         } catch (error) {
             return createResponse('Error: Failed to write to KV database', { status: 500 });
         }
@@ -760,7 +764,7 @@ async function uploadFileToHuggingFace(context, fullId, metadata, returnLink) {
             } else {
                 // 私有仓库：先写入KV，再通过自己的域名访问进行审查
                 try {
-                    await db.put(fullId, "", { metadata });
+                    await storeUploadedFile(context, fullId, "", metadata);
                 } catch (error) {
                     return createResponse('Error: Failed to write to KV database', { status: 500 });
                 }
@@ -773,7 +777,7 @@ async function uploadFileToHuggingFace(context, fullId, metadata, returnLink) {
 
         // 写入 KV 数据库
         try {
-            await db.put(fullId, "", { metadata });
+            await storeUploadedFile(context, fullId, "", metadata);
         } catch (error) {
             return createResponse('Error: Failed to write to KV database', { status: 500 });
         }
@@ -838,7 +842,7 @@ async function uploadFileToWebDAV(context, fullId, metadata, returnLink) {
                 metadata.Label = await moderateContent(env, webdavPublicUrl);
             } else {
                 try {
-                    await db.put(fullId, "", { metadata });
+                    await storeUploadedFile(context, fullId, "", metadata);
                 } catch {
                     return createResponse('Error: Failed to write to database', { status: 500 });
                 }
@@ -850,7 +854,7 @@ async function uploadFileToWebDAV(context, fullId, metadata, returnLink) {
         }
 
         try {
-            await db.put(fullId, "", { metadata });
+            await storeUploadedFile(context, fullId, "", metadata);
         } catch {
             return createResponse('Error: Failed to write to database', { status: 500 });
         }

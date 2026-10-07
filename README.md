@@ -126,6 +126,10 @@ The documentation covers deployment, storage configuration, feature usage, RESTf
 
 **[Read the full documentation →](https://cfbed.sanyue.de/en)**
 
+Instance API reference (Chinese): [API documentation](docs/api.html). After deployment, visit `/api-docs.html` or open “API Documentation” from the upload page menu. It covers Token permissions, upload parameters, file retention, response examples, and compatibility with existing clients.
+
+New uploads default to 24 hours, temporary storage is limited to 7 days, and admins can explicitly select permanent storage. See [file retention and cleanup](docs/file-retention.md).
+
 ## 📝 Changelog
 
 Follow the latest features, bug fixes, compatibility changes, and upgrade notes.

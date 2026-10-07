@@ -1,3 +1,4 @@
+import { isFileExpired } from './fileRetention.js';
 /* 索引管理器 */
 
 /**
@@ -528,7 +529,7 @@ export async function readIndex(context, options = {}) {
             throw new Error('Failed to get index');
         }
 
-        let filteredFiles = index.files;
+        let filteredFiles = index.files.filter(file => !isFileExpired(file.metadata));
 
         // 目录过滤
         if (directory) {

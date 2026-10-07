@@ -61,6 +61,9 @@ export class TelegramAPI {
             file_id: file.file_id,
             file_name: file.file_name || file.file_unique_id,
             file_size: file.file_size,
+            message_id: responseData.result.message_id,
+            chat_id: responseData.result.chat?.id,
+            message_date: responseData.result.date,
         });
 
         try {
@@ -93,6 +96,18 @@ export class TelegramAPI {
             console.error('Error parsing Telegram response:', error.message);
             return null;
         }
+    }
+
+    async deleteMessage(chatId, messageId) {
+        const response = await fetch(`${this.baseURL}/deleteMessage`, {
+            method: 'POST',
+            headers: { ...this.defaultHeaders, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
+        });
+        const result = await response.json();
+        // Retrying a partially deleted chunked file must be safe.
+        if (result.ok || (result.error_code === 400 && /message to delete not found/i.test(result.description))) return true;
+        throw new Error(`Telegram message deletion failed (${result.error_code || response.status})`);
     }
 
     /**

@@ -209,6 +209,7 @@ const output = `/**
 // ==================== 自动生成的导入 ====================
 
 ${imports}
+import { cleanupExpiredFiles } from '../../functions/utils/retentionCleanup.js';
 
 // ==================== 自动生成的路由表 ====================
 
@@ -325,6 +326,8 @@ function getResponseCacheTtl(response) {
 }
 
 function isCacheLookupRequest(request) {
+    // File metadata must be checked before serving even an existing cached response.
+    if (new URL(request.url).pathname.startsWith('/file/')) return false;
     return request.method === 'GET' || request.method === 'HEAD';
 }
 
@@ -387,6 +390,9 @@ async function maybeServeFromCache(request, ctx, producer) {
 // ==================== Worker 入口 ====================
 
 export default {
+    async scheduled(event, env, ctx) {
+        ctx.waitUntil(cleanupExpiredFiles(env));
+    },
     async fetch(request, env, ctx) {
         const url = new URL(request.url);
         const pathname = url.pathname;

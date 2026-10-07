@@ -41,6 +41,7 @@ import * as apiAuthResetAuth from '../../functions/api/auth/resetAuth.js';
 import * as apiAuthSessionCheck from '../../functions/api/auth/sessionCheck.js';
 import * as apiBingWallpaper_index from '../../functions/api/bing/wallpaper/index.js';
 import * as apiManageApiTokens from '../../functions/api/manage/apiTokens.js';
+import * as apiManageCleanupExpired from '../../functions/api/manage/cleanupExpired.js';
 import * as apiManageList from '../../functions/api/manage/list.js';
 import * as apiManageQuota from '../../functions/api/manage/quota.js';
 import * as apiPublicList from '../../functions/api/public/list.js';
@@ -63,6 +64,7 @@ import * as apiManageWhiteCatchAll from '../../functions/api/manage/white/[[path
 import * as davCatchAll from '../../functions/dav/[[path]].js';
 import * as fileCatchAll from '../../functions/file/[[path]].js';
 
+import { cleanupExpiredFiles } from '../../functions/utils/retentionCleanup.js';
 
 // ==================== 自动生成的路由表 ====================
 
@@ -92,6 +94,7 @@ const routes = [
     { path: '/api/auth/sessionCheck', module: apiAuthSessionCheck, middlewares: [mw_api] },
     { path: '/api/bing/wallpaper', module: apiBingWallpaper_index, middlewares: [mw_api] },
     { path: '/api/manage/apiTokens', module: apiManageApiTokens, middlewares: [mw_api, mw_api_manage] },
+    { path: '/api/manage/cleanupExpired', module: apiManageCleanupExpired, middlewares: [mw_api, mw_api_manage] },
     { path: '/api/manage/list', module: apiManageList, middlewares: [mw_api, mw_api_manage] },
     { path: '/api/manage/quota', module: apiManageQuota, middlewares: [mw_api, mw_api_manage] },
     { path: '/api/public/list', module: apiPublicList, middlewares: [mw_api] },
@@ -225,6 +228,8 @@ function getResponseCacheTtl(response) {
 }
 
 function isCacheLookupRequest(request) {
+    // File metadata must be checked before serving even an existing cached response.
+    if (new URL(request.url).pathname.startsWith('/file/')) return false;
     return request.method === 'GET' || request.method === 'HEAD';
 }
 
@@ -287,6 +292,9 @@ async function maybeServeFromCache(request, ctx, producer) {
 // ==================== Worker 入口 ====================
 
 export default {
+    async scheduled(event, env, ctx) {
+        ctx.waitUntil(cleanupExpiredFiles(env));
+    },
     async fetch(request, env, ctx) {
         const url = new URL(request.url);
         const pathname = url.pathname;
