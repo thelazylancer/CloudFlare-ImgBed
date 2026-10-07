@@ -58,7 +58,11 @@ jobs:
 
       - name: Install dependencies
         if: steps.check.outputs.skip != 'true'
-        run: npm ci --workspace=@cloudflare-imgbed/common --workspace=@cloudflare-imgbed/worker --omit=dev
+        run: npm ci --include=dev
+
+      - name: Check before deployment
+        if: steps.check.outputs.skip != 'true'
+        run: npm run check
 
       - name: Generate worker routes
         if: steps.check.outputs.skip != 'true'

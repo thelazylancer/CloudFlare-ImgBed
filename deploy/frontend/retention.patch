@@ -1,3 +1,178 @@
+diff --git a/src/components/dashboard/FileCard.vue b/src/components/dashboard/FileCard.vue
+index 4d606ac..91b6e93 100644
+--- a/src/components/dashboard/FileCard.vue
++++ b/src/components/dashboard/FileCard.vue
+@@ -7,6 +7,7 @@
+     >
+         <el-checkbox v-model="localSelected" @change="$emit('update:selected', localSelected)"></el-checkbox>
+         <div class="file-short-info">
++            <RetentionBadge :expires-at="item.metadata?.ExpiresAt" />
+             <div v-if="item.metadata?.ListType === 'White'" class="success-tag">{{ channelTag }}</div>
+             <div v-else-if="item.metadata?.ListType === 'Block' || item.metadata?.Label === 'adult'" class="fail-tag">{{ channelTag }}</div>
+             <div v-else class="success-tag">{{ channelTag }}</div>
+@@ -116,7 +117,9 @@
+ </template>
+ 
+ <script>
++import RetentionBadge from './RetentionBadge.vue';
+ export default {
++    components: { RetentionBadge },
+     name: 'FileCard',
+     props: {
+         item: { type: Object, required: true },
+diff --git a/src/components/dashboard/FileDetailDialog.vue b/src/components/dashboard/FileDetailDialog.vue
+index 6f243d4..64a8545 100644
+--- a/src/components/dashboard/FileDetailDialog.vue
++++ b/src/components/dashboard/FileDetailDialog.vue
+@@ -88,6 +88,9 @@
+                 <span v-else style="color: var(--el-text-color-secondary);">{{ $t('fileDetail.noDimensions') }}</span>
+             </el-descriptions-item>
+             <el-descriptions-item :label="$t('fileDetail.uploadTimeLabel')">{{ uploadTime }}</el-descriptions-item>
++            <el-descriptions-item :label="$t('retention.title')">
++                <RetentionBadge :expires-at="file?.metadata?.ExpiresAt" detail />
++            </el-descriptions-item>
+             <el-descriptions-item :label="$t('fileDetail.channelTypeAndName')">
+                 <el-tag size="small" type="info" style="margin-right: 6px;">{{ file?.metadata?.Channel || $t('fileDetail.unknown') }}</el-tag>
+                 <span>{{ file?.metadata?.ChannelName || '-' }}</span>
+@@ -131,11 +134,13 @@
+ </template>
+ 
+ <script>
++import RetentionBadge from './RetentionBadge.vue';
+ import { ElMessage } from 'element-plus';
+ import fetchWithAuth from '@/utils/fetchWithAuth';
+ import { validateFileId } from '@/utils/fileIdValidator';
+ 
+ export default {
++    components: { RetentionBadge },
+     name: 'FileDetailDialog',
+     props: {
+         modelValue: { type: Boolean, default: false },
+diff --git a/src/components/dashboard/FileListItem.vue b/src/components/dashboard/FileListItem.vue
+index cc8a72f..10e8b96 100644
+--- a/src/components/dashboard/FileListItem.vue
++++ b/src/components/dashboard/FileListItem.vue
+@@ -34,6 +34,7 @@
+                 <span class="filename-start">{{ fileNameStart }}</span>
+                 <span class="filename-end">{{ fileNameEnd }}</span>
+             </span>
++            <RetentionBadge v-if="!isFolder" :expires-at="item.metadata?.ExpiresAt" />
+         </div>
+         <!-- 标签 -->
+         <div class="list-col list-col-tags">
+@@ -111,7 +112,9 @@
+ </template>
+ 
+ <script>
++import RetentionBadge from './RetentionBadge.vue';
+ export default {
++    components: { RetentionBadge },
+     name: 'FileListItem',
+     props: {
+         item: { type: Object, required: true },
+@@ -247,6 +250,11 @@ export default {
+     cursor: pointer;
+ }
+ .list-col-name {
++    display: flex;
++    flex-direction: column;
++    align-items: flex-start;
++    justify-content: center;
++    gap: 3px;
+     cursor: pointer;
+     overflow: hidden;
+     padding-right: 16px;
+diff --git a/src/components/dashboard/FilterDropdown.vue b/src/components/dashboard/FilterDropdown.vue
+index ca6f47e..0f9b85a 100644
+--- a/src/components/dashboard/FilterDropdown.vue
++++ b/src/components/dashboard/FilterDropdown.vue
+@@ -7,6 +7,16 @@
+         </span>
+         <template #dropdown>
+             <el-dropdown-menu class="filter-dropdown-menu">
++                <div class="filter-section">
++                    <div class="filter-title">{{ $t('retention.title') }}</div>
++                    <div class="filter-options">
++                        <el-checkbox-group v-model="localFilters.retention" @change="handleFilterChange('retention')">
++                            <el-checkbox v-for="value in ['temporary', 'permanent', 'expired']" :key="value" :label="value">
++                                {{ $t('retention.' + value) }}
++                            </el-checkbox>
++                        </el-checkbox-group>
++                    </div>
++                </div>
+                 <!-- 访问状态 -->
+                 <div class="filter-section">
+                     <div class="filter-title">{{ $t('filter.accessStatus') }}</div>
+@@ -116,6 +126,7 @@ export default {
+                 label: [],
+                 fileType: [],
+                 channel: [],
++                retention: [],
+                 channelName: []
+             })
+         },
+@@ -133,6 +144,7 @@ export default {
+                 label: [],
+                 fileType: [],
+                 channel: [],
++                retention: [],
+                 channelName: []
+             }
+         };
+@@ -212,6 +224,7 @@ export default {
+                     label: Array.isArray(newFilters.label) ? [...newFilters.label] : [],
+                     fileType: Array.isArray(newFilters.fileType) ? [...newFilters.fileType] : [],
+                     channel: Array.isArray(newFilters.channel) ? [...newFilters.channel] : [],
++                    retention: Array.isArray(newFilters.retention) ? [...newFilters.retention] : [],
+                     channelName: Array.isArray(newFilters.channelName) ? [...newFilters.channelName] : []
+                 };
+             },
+@@ -231,6 +244,7 @@ export default {
+                 label: [],
+                 fileType: [],
+                 channel: [],
++                retention: [],
+                 channelName: []
+             };
+             this.$emit('update:filters', { ...this.localFilters });
+diff --git a/src/components/dashboard/RetentionBadge.vue b/src/components/dashboard/RetentionBadge.vue
+new file mode 100644
+index 0000000..c34bcf8
+--- /dev/null
++++ b/src/components/dashboard/RetentionBadge.vue
+@@ -0,0 +1,32 @@
++<template>
++    <span class="retention-info" :title="expiryLabel">
++        <el-tag size="small" :type="permanent ? 'info' : expired ? 'danger' : 'warning'">
++            {{ label }}
++        </el-tag>
++        <span v-if="detail && !permanent">{{ expiryLabel }}</span>
++    </span>
++</template>
++
++<script setup>
++import { computed } from 'vue';
++import { useNow } from '@vueuse/core';
++import i18n from '@/locales';
++const props = defineProps({ expiresAt: { type: Number, default: null }, detail: Boolean });
++const t = (key, values) => i18n.global.t(key, values);
++const now = useNow({ interval: 60000 });
++const permanent = computed(() => !Number.isFinite(props.expiresAt));
++const expired = computed(() => !permanent.value && props.expiresAt <= now.value.getTime());
++const expiryLabel = computed(() => permanent.value ? t('retention.permanent') : new Date(props.expiresAt).toLocaleString());
++const label = computed(() => {
++    if (permanent.value) return t('retention.permanent');
++    if (expired.value) return t('retention.expired');
++    const minutes = Math.ceil((props.expiresAt - now.value.getTime()) / 60000);
++    const time = minutes >= 1440 ? t('retention.days', { count: Math.ceil(minutes / 1440) }) :
++        minutes >= 60 ? t('retention.hours', { count: Math.ceil(minutes / 60) }) : t('retention.minutes', { count: minutes });
++    return t('retention.remaining', { time });
++});
++</script>
++
++<style scoped>
++.retention-info { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; }
++</style>
 diff --git a/src/components/upload/UploadForm.vue b/src/components/upload/UploadForm.vue
 index caa2428..65bd823 100644
 --- a/src/components/upload/UploadForm.vue
@@ -135,10 +310,33 @@ index 99d013d..8883612 100644
          'update:uploadFolder',
          'update:autoRetry',
 diff --git a/src/locales/en.json b/src/locales/en.json
-index bfbcf31..7033c2c 100644
+index bfbcf31..e8c50b4 100644
 --- a/src/locales/en.json
 +++ b/src/locales/en.json
-@@ -36,7 +36,7 @@
+@@ -1,4 +1,22 @@
+ {
++    "retention": {
++        "title": "Retention",
++        "temporary": "Temporary files",
++        "permanent": "Permanent",
++        "expired": "Expired",
++        "remaining": "{time} left",
++        "days": "{count} d",
++        "hours": "{count} h",
++        "minutes": "{count} min",
++        "lastCleanup": "Last cleanup",
++        "never": "Not run yet",
++        "cleanupResult": "Deleted {deleted}, failed {failed}",
++        "indexing": "Building expiry index",
++        "cleanupFailed": "Cleanup did not complete; retry",
++        "recentFailures": "Recent failed files",
++        "cleanNow": "Clean expired files / retry",
++        "moreCleanup": "More records remain; continue cleanup"
++    },
+   "login": {
+     "title": "Login to {owner} ImgHub",
+     "adminTitle": "Admin Login",
+@@ -36,7 +54,7 @@
      "manage": "Management",
      "logout": "Logout",
      "logoutSuccess": "Logged out",
@@ -147,7 +345,7 @@ index bfbcf31..7033c2c 100644
      "switchUploadMethod": "Switch Upload Method",
      "copyAll": "Copy All",
      "retryFailed": "Retry Failed",
-@@ -72,6 +72,12 @@
+@@ -72,6 +90,12 @@
      "imageLoadFailed": "Image load failed"
    },
    "uploadSettings": {
@@ -161,10 +359,33 @@ index bfbcf31..7033c2c 100644
      "uploadChannel": "Upload Channel",
      "channelType": "Channel Type",
 diff --git a/src/locales/zh-CN.json b/src/locales/zh-CN.json
-index ec7f114..1e6e0f1 100644
+index ec7f114..106cf99 100644
 --- a/src/locales/zh-CN.json
 +++ b/src/locales/zh-CN.json
-@@ -36,7 +36,7 @@
+@@ -1,4 +1,22 @@
+ {
++    "retention": {
++        "title": "保存期限",
++        "temporary": "临时文件",
++        "permanent": "永久保存",
++        "expired": "已过期",
++        "remaining": "剩余 {time}",
++        "days": "{count} 天",
++        "hours": "{count} 小时",
++        "minutes": "{count} 分钟",
++        "lastCleanup": "最近清理",
++        "never": "尚未运行",
++        "cleanupResult": "已删除 {deleted} 个，失败 {failed} 个",
++        "indexing": "正在补建到期索引",
++        "cleanupFailed": "清理未完成，请重试",
++        "recentFailures": "最近清理失败的文件",
++        "cleanNow": "清理过期文件／重试",
++        "moreCleanup": "还有待处理记录，可继续清理"
++    },
+   "login": {
+     "title": "登录到 {owner} 图床",
+     "adminTitle": "管理端登录",
+@@ -36,7 +54,7 @@
      "manage": "系统管理",
      "logout": "退出登录",
      "logoutSuccess": "已退出登录",
@@ -173,7 +394,7 @@ index ec7f114..1e6e0f1 100644
      "switchUploadMethod": "切换上传方式",
      "copyAll": "整体复制",
      "retryFailed": "失败重试",
-@@ -73,6 +73,12 @@
+@@ -73,6 +91,12 @@
      "imageLoadFailed": "图片加载失败"
    },
    "uploadSettings": {
@@ -186,6 +407,131 @@ index ec7f114..1e6e0f1 100644
      "title": "上传设置",
      "uploadChannel": "上传渠道",
      "channelType": "渠道类型",
+diff --git a/src/utils/fileManager.js b/src/utils/fileManager.js
+index 6d00a27..e5aba6f 100644
+--- a/src/utils/fileManager.js
++++ b/src/utils/fileManager.js
+@@ -204,6 +204,9 @@ class FileManager {
+         if (filters.channelName && filters.channelName.length > 0) {
+             params += `&channelName=${encodeURIComponent(filters.channelName.join(','))}`;
+         }
++        if (filters.retention?.length) {
++            params += `&retention=${encodeURIComponent(filters.retention.join(','))}`;
++        }
+         return params;
+     }
+ 
+diff --git a/src/views/AdminDashBoard.vue b/src/views/AdminDashBoard.vue
+index 84bcfb2..b05b3d5 100644
+--- a/src/views/AdminDashBoard.vue
++++ b/src/views/AdminDashBoard.vue
+@@ -20,6 +20,18 @@
+                 </template>
+             </AdminHeader>
+             <el-main class="main-container" :class="{ 'has-batch-toolbar': selectedFiles.length > 0 }">
++            <div v-if="showLogoutButton" class="cleanup-status" role="status" aria-live="polite">
++                <div>
++                    <span>{{ $t('retention.lastCleanup') }}: {{ cleanupStatus?.lastRunAt ? new Date(cleanupStatus.lastRunAt).toLocaleString() : $t('retention.never') }}</span>
++                    <span v-if="cleanupStatus?.lastResult"> · {{ $t('retention.cleanupResult', cleanupStatus.lastResult) }}</span>
++                    <span v-if="cleanupStatus?.backfillComplete === false"> · {{ $t('retention.indexing') }}</span>
++                    <span v-if="cleanupStatus?.lastError || cleanupError" class="cleanup-error"> · {{ cleanupError || $t('retention.cleanupFailed') }}</span>
++                    <div v-if="cleanupStatus?.recentFailures?.length" class="cleanup-error">
++                        {{ $t('retention.recentFailures') }}: {{ cleanupStatus.recentFailures.map(item => item.fileId).join(', ') }}
++                    </div>
++                </div>
++                <el-button size="small" :loading="cleanupLoading" @click="runCleanup">{{ $t('retention.cleanNow') }}</el-button>
++            </div>
+             <!-- 目录导航 -->
+             <div class="breadcrumb-container">
+                 <DashboardCheckbox
+@@ -500,6 +512,9 @@ data() {
+         loading: false, // 加载状态
+         currentPath: '', // 当前文件夹路径
+         refreshLoading: false,
++        cleanupStatus: null,
++        cleanupError: '',
++        cleanupLoading: false,
+         showTagDialog: false, // 标签管理对话框
+         showBatchTagDialog: false, // 批量标签管理对话框
+         currentTagFile: '', // 当前标签管理的文件
+@@ -518,6 +533,7 @@ data() {
+             label: [],         // 审查结果: 'normal', 'teen', 'adult'
+             fileType: [],      // 文件类型: 'image', 'video', 'audio', 'other'
+             channel: [],       // 渠道类型: 'TelegramNew', 'CloudflareR2', 'S3', 'Discord', 'HuggingFace', 'WebDAV', 'External'
++            retention: [],
+             channelName: []    // 渠道名称: 动态获取
+         },
+         channelNameOptions: [], // 动态从文件列表中提取
+@@ -924,6 +940,42 @@ methods: {
+         this.refreshFileList();
+     },
+     // 处理筛选变化（来自 FilterDropdown 组件）
++    async loadCleanupStatus() {
++        try {
++            const response = await fetchWithAuth('/api/manage/cleanupExpired');
++            if (!response.ok) throw new Error('Cleanup status unavailable');
++            this.cleanupStatus = await response.json();
++            this.cleanupError = '';
++        } catch {
++            this.cleanupError = this.$t('retention.cleanupFailed');
++        }
++    },
++    async runCleanup() {
++        this.cleanupLoading = true;
++        this.cleanupError = '';
++        let deleted = 0, failed = 0, hasMore = false;
++        try {
++            // Bounded manual work; another click or the scheduled task continues the saved cursor.
++            for (let batch = 0; batch < 20; batch++) {
++                const response = await fetchWithAuth('/api/manage/cleanupExpired', { method: 'POST' });
++                if (!response.ok) throw new Error('Cleanup failed');
++                const result = await response.json();
++                deleted += result.deleted;
++                failed += result.failed;
++                hasMore = result.hasMore;
++                if (!hasMore) break;
++                await new Promise(resolve => setTimeout(resolve, 1100));
++            }
++            const message = this.$t('retention.cleanupResult', { deleted, failed }) + (hasMore ? ' · ' + this.$t('retention.moreCleanup') : '');
++            this.$message({ message, type: failed ? 'warning' : 'success' });
++            await this.loadCleanupStatus();
++            await this.refreshFileList();
++        } catch {
++            this.cleanupError = this.$t('retention.cleanupFailed');
++        } finally {
++            this.cleanupLoading = false;
++        }
++    },
+     handleFilterChange({ type, filters }) {
+         this.filters = filters;
+         this.currentPage = 1; // 重置到第一页
+@@ -936,6 +988,7 @@ methods: {
+             label: [],
+             fileType: [],
+             channel: [],
++            retention: [],
+             channelName: []
+         };
+         this.currentPage = 1;
+@@ -2140,6 +2193,7 @@ mounted() {
+     this.loading = true;
+     // 路由守卫已通过 /api/auth/sessionCheck 验证认证状态
+     this.showLogoutButton = this.$store.state.adminLoggedIn;
++    if (this.showLogoutButton) this.loadCleanupStatus();
+     // 首次加载时刷新文件列表
+     this.refreshFileList()
+         .then(() => {
+@@ -2176,6 +2230,10 @@ beforeUnmount() {
+ <style scoped src="@/styles/admin-common.css"></style>
+ 
+ <style scoped>
++.cleanup-status { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; font-size: 12px; }
++.cleanup-status > div { min-width: 0; overflow-wrap: anywhere; flex: 1 1 240px; }
++.cleanup-error { color: var(--el-color-danger); }
++
+ .container {
+     background: var(--admin-container-bg-color);
+     min-height: 100vh;
 diff --git a/src/views/UploadHome.vue b/src/views/UploadHome.vue
 index cf814a6..e5a6719 100644
 --- a/src/views/UploadHome.vue

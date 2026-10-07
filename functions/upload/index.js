@@ -58,6 +58,12 @@ export async function onRequest(context) {  // Contents of context object
         return retentionErrorResponse(error);
     }
 
+    try {
+        context.formdata = await request.formData();
+    } catch {
+        return createResponse('Error: Expected multipart form data', { status: 400 });
+    }
+
     // 检查是否为初始化分块上传请求
     const initChunked = url.searchParams.get('initChunked') === 'true';
     if (initChunked) {
@@ -86,7 +92,15 @@ async function processFileUpload(context, formdata = null) {
     const { request, url } = context;
 
     // 解析表单数据
-    formdata = formdata || await request.formData();
+    try {
+        formdata = formdata || context.formdata || await request.formData();
+    } catch {
+        return createResponse('Error: Expected multipart form data', { status: 400 });
+    }
+    const file = formdata.get('file');
+    if (!file || typeof file === 'string' || typeof file.name !== 'string') {
+        return createResponse('Error: A file is required in the file field', { status: 400 });
+    }
 
     // 将 formdata 存储在 context 中
     context.formdata = formdata;
@@ -139,7 +153,6 @@ async function processFileUpload(context, formdata = null) {
 
     // 获取文件信息
     const time = new Date().getTime();
-    const file = formdata.get('file');
     const fileType = file.type;
     let fileName = file.name;
     const fileSizeBytes = file.size; // 文件大小，单位字节
@@ -222,7 +235,7 @@ async function processFileUpload(context, formdata = null) {
     if (uploadChannel === 'CloudflareR2') {
         // -------------CloudFlare R2 渠道---------------
         const res = await uploadFileToCloudflareR2(context, fullId, metadata, returnLink);
-        if (res.status === 200 || !autoRetry) {
+        if (res.status === 200 || !autoRetry || context.uploadPersistenceFailed || context.uploadRollbackFailed) {
             return res;
         } else {
             err = await res.text();
@@ -230,7 +243,7 @@ async function processFileUpload(context, formdata = null) {
     } else if (uploadChannel === 'S3') {
         // ---------------------S3 渠道------------------
         const res = await uploadFileToS3(context, fullId, metadata, returnLink);
-        if (res.status === 200 || !autoRetry) {
+        if (res.status === 200 || !autoRetry || context.uploadPersistenceFailed || context.uploadRollbackFailed) {
             return res;
         } else {
             err = await res.text();
@@ -238,7 +251,7 @@ async function processFileUpload(context, formdata = null) {
     } else if (uploadChannel === 'Discord') {
         // ---------------------Discord 渠道------------------
         const res = await uploadFileToDiscord(context, fullId, metadata, returnLink);
-        if (res.status === 200 || !autoRetry) {
+        if (res.status === 200 || !autoRetry || context.uploadPersistenceFailed || context.uploadRollbackFailed) {
             return res;
         } else {
             err = await res.text();
@@ -246,7 +259,7 @@ async function processFileUpload(context, formdata = null) {
     } else if (uploadChannel === 'HuggingFace') {
         // ---------------------HuggingFace 渠道------------------
         const res = await uploadFileToHuggingFace(context, fullId, metadata, returnLink);
-        if (res.status === 200 || !autoRetry) {
+        if (res.status === 200 || !autoRetry || context.uploadPersistenceFailed || context.uploadRollbackFailed) {
             return res;
         } else {
             err = await res.text();
@@ -254,7 +267,7 @@ async function processFileUpload(context, formdata = null) {
     } else if (uploadChannel === 'WebDAV') {
         // ---------------------WebDAV 渠道------------------
         const res = await uploadFileToWebDAV(context, fullId, metadata, returnLink);
-        if (res.status === 200 || !autoRetry) {
+        if (res.status === 200 || !autoRetry || context.uploadPersistenceFailed || context.uploadRollbackFailed) {
             return res;
         } else {
             err = await res.text();
@@ -266,7 +279,7 @@ async function processFileUpload(context, formdata = null) {
     } else {
         // ----------------Telegram New 渠道-------------------
         const res = await uploadFileToTelegram(context, fullId, metadata, fileExt, fileName, fileType, returnLink);
-        if (res.status === 200 || !autoRetry) {
+        if (res.status === 200 || !autoRetry || context.uploadPersistenceFailed || context.uploadRollbackFailed) {
             return res;
         } else {
             err = await res.text();
@@ -516,11 +529,15 @@ async function uploadFileToTelegram(context, fullId, metadata, fileExt, fileName
     }
 
     // 上传文件到 Telegram
-    let res = createResponse('upload error, check your environment params about telegram channel!', { status: 400 });
+    let sentMessage;
+    let persisted = false;
     try {
         const response = await telegramAPI.sendFile(formdata.get('file'), tgChatId, sendFunction.url, sendFunction.type);
+        sentMessage = response.result;
         const fileInfo = telegramAPI.getFileInfo(response);
+        if (!fileInfo) throw new Error('Telegram returned no file');
         const filePath = await telegramAPI.getFilePath(fileInfo.file_id);
+        if (!filePath) throw new Error('Telegram returned no file path');
         const id = fileInfo.file_id;
         // Telegram sendPhoto always stores a JPEG rendition, even when the
         // uploaded source was PNG. Keep the response MIME type aligned with
@@ -541,28 +558,32 @@ async function uploadFileToTelegram(context, fullId, metadata, fileExt, fileName
         metadata.Label = await moderateContent(env, moderateUrl);
 
         // 更新metadata，写入KV数据库
-        try {
-            metadata.Channel = "TelegramNew";
-            metadata.ChannelName = tgChannel.name;
-
-            metadata.TgFileId = id;
-            metadata.TgMessageId = fileInfo.message_id;
-            metadata.TgMessageChatId = fileInfo.chat_id;
-            metadata.TgMessageDate = fileInfo.message_date;
-            await storeUploadedFile(context, fullId, "", metadata);
-            res = buildUploadResponse(context, returnLink);
-        } catch (error) {
-            return createResponse('Error: Failed to write to KV database', { status: 500 });
-        }
+        metadata.Channel = "TelegramNew";
+        metadata.ChannelName = tgChannel.name;
+        metadata.TgFileId = id;
+        metadata.TgMessageId = fileInfo.message_id;
+        metadata.TgMessageChatId = fileInfo.chat_id;
+        metadata.TgMessageDate = fileInfo.message_date;
+        await storeUploadedFile(context, fullId, "", metadata);
+        persisted = true;
 
         // 结束上传
         waitUntil(endUpload(context, fullId, metadata));
-
+        return buildUploadResponse(context, returnLink);
     } catch (error) {
-        console.log('Telegram upload error:', error.message);
-        res = createResponse('upload error, check your environment params about telegram channel!', { status: 400 });
-    } finally {
-        return res;
+        if (!persisted && sentMessage?.message_id) {
+            try {
+                await telegramAPI.deleteMessage(sentMessage.chat?.id || tgChatId, sentMessage.message_id);
+            } catch {
+                // Stop automatic retries when the original media could not be rolled back.
+                context.uploadRollbackFailed = true;
+                console.error('Telegram upload rollback failed; message ID:', sentMessage.message_id);
+            }
+        }
+        console.error('Telegram upload failed; persistence:', Boolean(context.uploadPersistenceFailed));
+        return createResponse(context.uploadPersistenceFailed
+            ? 'Error: Failed to persist upload; Telegram rollback was attempted'
+            : 'Error: Telegram upload failed', { status: context.uploadPersistenceFailed ? 500 : 502 });
     }
 }
 
@@ -896,7 +917,7 @@ async function tryRetry(err, context, uploadChannel, fullId, metadata, fileExt, 
     }
 
     // 原渠道重试成功，直接返回
-    if (retryRes && retryRes.status === 200) {
+    if (retryRes && (retryRes.status === 200 || context.uploadPersistenceFailed || context.uploadRollbackFailed)) {
         return retryRes;
     } else if (retryRes) {
         errMessages[uploadChannel + '_retry'] = 'Error: ' + uploadChannel + ' retry - ' + await retryRes.text();
@@ -920,7 +941,7 @@ async function tryRetry(err, context, uploadChannel, fullId, metadata, fileExt, 
                 res = await uploadFileToDiscord(context, fullId, metadata, returnLink);
             }
 
-            if (res && res.status === 200) {
+            if (res && (res.status === 200 || context.uploadPersistenceFailed || context.uploadRollbackFailed)) {
                 return res;
             } else if (res) {
                 errMessages[channelList[i]] = 'Error: ' + channelList[i] + await res.text();

@@ -77,6 +77,12 @@ export function retentionErrorResponse(error) {
 export async function storeUploadedFile(context, fileId, value, metadata) {
     const seconds = context.retention === undefined ? DEFAULT_RETENTION_SECONDS : context.retention;
     metadata.ExpiresAt = seconds === null ? null : Date.now() + seconds * 1000;
-    await getDatabase(context.env).put(fileId, value, { metadata });
+    try {
+        await getDatabase(context.env).put(fileId, value, { metadata });
+    } catch (error) {
+        // Retrying another storage channel cannot repair a database outage.
+        context.uploadPersistenceFailed = true;
+        throw Object.assign(error, { status: 500 });
+    }
     context.fileExpiresAt = metadata.ExpiresAt;
 }

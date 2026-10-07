@@ -14,13 +14,13 @@ export async function initializeChunkedUpload(context) {
 
     try {
         // 解析表单数据
-        const formdata = await request.formData();
+        const formdata = context.formdata || await request.formData();
 
         const originalFileName = formdata.get('originalFileName');
         const originalFileType = formdata.get('originalFileType');
-        const totalChunks = parseInt(formdata.get('totalChunks'));
+        const totalChunks = Number(formdata.get('totalChunks'));
 
-        if (!originalFileName || !originalFileType || !totalChunks) {
+        if (typeof originalFileName !== 'string' || !originalFileName || typeof originalFileType !== 'string' || !originalFileType || !Number.isInteger(totalChunks) || totalChunks < 1) {
             return createResponse('Error: Missing initialization parameters', { status: 400 });
         }
 
@@ -90,18 +90,21 @@ export async function handleChunkUpload(context) {
     const db = getDatabase(env);
 
     // 解析表单数据
-    const formdata = await request.formData();
+    const formdata = context.formdata || await request.formData();
     context.formdata = formdata;
 
     try {
         const chunk = formdata.get('file');
-        const chunkIndex = parseInt(formdata.get('chunkIndex'));
-        const totalChunks = parseInt(formdata.get('totalChunks'));
+        const chunkIndexValue = formdata.get('chunkIndex');
+        const chunkIndex = typeof chunkIndexValue === 'string' && chunkIndexValue.trim() ? Number(chunkIndexValue) : NaN;
+        const totalChunks = Number(formdata.get('totalChunks'));
         const uploadId = formdata.get('uploadId');
         const originalFileName = formdata.get('originalFileName');
         const originalFileType = formdata.get('originalFileType');
 
-        if (!chunk || chunkIndex === null || !totalChunks || !uploadId || !originalFileName || !originalFileType) {
+        if (!chunk || typeof chunk === 'string' || !Number.isInteger(chunkIndex) || chunkIndex < 0 ||
+            !Number.isInteger(totalChunks) || chunkIndex >= totalChunks ||
+            ![uploadId, originalFileName, originalFileType].every(value => typeof value === 'string' && value)) {
             return createResponse('Error: Missing chunk upload parameters', { status: 400 });
         }
 

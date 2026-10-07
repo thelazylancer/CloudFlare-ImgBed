@@ -178,16 +178,22 @@ D1Database.prototype.listSettings = function(options) {
     var prefix = options.prefix || '';
     var limit = options.limit || 1000;
     
-    var query = 'SELECT key, value FROM settings';
+    var query = 'SELECT key, value FROM settings WHERE 1 = 1';
     var params = [];
     
     if (prefix) {
-        query += ' WHERE key LIKE ?';
-        params.push(prefix + '%');
+        query += ' AND substr(key, 1, length(?)) = ?';
+        params.push(prefix);
+        params.push(prefix);
+    }
+
+    if (options.cursor) {
+        query += ' AND key > ?';
+        params.push(options.cursor);
     }
     
     query += ' ORDER BY key LIMIT ?';
-    params.push(limit);
+    params.push(limit + 1);
     
     var stmt = this.db.prepare(query);
     if (params.length > 0) {
@@ -195,6 +201,8 @@ D1Database.prototype.listSettings = function(options) {
     }
     return stmt.all().then(function(response) {
         var results = response.results || [];
+        var hasMore = results.length > limit;
+        if (hasMore) results.pop();
         var keys = results.map(function(row) {
             return {
                 name: row.key,
@@ -202,8 +210,28 @@ D1Database.prototype.listSettings = function(options) {
             };
         });
 
-        return { keys: keys };
+        return { keys: keys, list_complete: !hasMore, cursor: hasMore ? keys.at(-1).name : null };
     });
+};
+
+D1Database.prototype.listExpiredFiles = async function(now, limit, cursor = '') {
+    const expiry = "json_extract(metadata, '$.ExpiresAt')";
+    let query = `SELECT id, metadata FROM files WHERE json_type(metadata, '$.ExpiresAt') IN ('integer', 'real') AND ${expiry} <= ?`;
+    const params = [now];
+    if (cursor) {
+        const [expiresAt, id] = JSON.parse(cursor);
+        query += ` AND (${expiry} > ? OR (${expiry} = ? AND id > ?))`;
+        params.push(expiresAt, expiresAt, id);
+    }
+    query += ` ORDER BY ${expiry}, id LIMIT ?`;
+    params.push(limit + 1);
+    const response = await this.db.prepare(query).bind(...params).all();
+    const rows = response.results || [];
+    const hasMore = rows.length > limit;
+    if (hasMore) rows.pop();
+    const keys = rows.map(row => ({ name: row.id, metadata: JSON.parse(row.metadata) }));
+    const last = keys.at(-1);
+    return { keys, list_complete: !hasMore, cursor: hasMore ? JSON.stringify([last.metadata.ExpiresAt, last.name]) : '' };
 };
 
 // ==================== 索引操作 ====================

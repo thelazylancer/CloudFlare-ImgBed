@@ -41,7 +41,6 @@ import * as apiAuthResetAuth from '../../functions/api/auth/resetAuth.js';
 import * as apiAuthSessionCheck from '../../functions/api/auth/sessionCheck.js';
 import * as apiBingWallpaper_index from '../../functions/api/bing/wallpaper/index.js';
 import * as apiManageApiTokens from '../../functions/api/manage/apiTokens.js';
-import * as apiManageCleanupExpired from '../../functions/api/manage/cleanupExpired.js';
 import * as apiManageList from '../../functions/api/manage/list.js';
 import * as apiManageQuota from '../../functions/api/manage/quota.js';
 import * as apiPublicList from '../../functions/api/public/list.js';
@@ -94,7 +93,6 @@ const routes = [
     { path: '/api/auth/sessionCheck', module: apiAuthSessionCheck, middlewares: [mw_api] },
     { path: '/api/bing/wallpaper', module: apiBingWallpaper_index, middlewares: [mw_api] },
     { path: '/api/manage/apiTokens', module: apiManageApiTokens, middlewares: [mw_api, mw_api_manage] },
-    { path: '/api/manage/cleanupExpired', module: apiManageCleanupExpired, middlewares: [mw_api, mw_api_manage] },
     { path: '/api/manage/list', module: apiManageList, middlewares: [mw_api, mw_api_manage] },
     { path: '/api/manage/quota', module: apiManageQuota, middlewares: [mw_api, mw_api_manage] },
     { path: '/api/public/list', module: apiPublicList, middlewares: [mw_api] },

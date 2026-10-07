@@ -1,4 +1,4 @@
-import { isFileExpired } from './fileRetention.js';
+import { isFileExpired, isTemporaryFile } from './fileRetention.js';
 /* 索引管理器 */
 
 /**
@@ -309,28 +309,28 @@ export async function mergeOperationsToIndex(context, options = {}) {
     try {
         console.log('Starting operations merge...');
         
-        // 获取当前索引
+        // Check the operation watermark before loading file chunks.
+        const db = getDatabase(context.env);
+        const metadataStr = await db.get(INDEX_META_KEY);
+        if (!metadataStr) {
+            await getIndex(context); // Schedule the existing rebuild path.
+            return { success: false, error: 'Index metadata not found', rebuildScheduled: true };
+        }
+        const metadata = JSON.parse(metadataStr);
+        const operationsResult = await getAllPendingOperations(context, metadata.lastOperationId);
+        const operations = operationsResult.operations;
+        const isALLOperations = operationsResult.isAll;
+        if (operations.length === 0) {
+            return { success: true, processedOperations: 0, message: 'No pending operations',
+                ...(options.includeIndex ? { metadata } : {}) };
+        }
         const currentIndex = await getIndex(context);
         if (currentIndex.success === false) {
             console.error('Failed to get current index for merge');
             return {
                 success: false,
-                error: 'Failed to get current index'
-            };
-        }
-
-        // 获取所有待处理的操作
-        const operationsResult = await getAllPendingOperations(context, currentIndex.lastOperationId);
-
-        const operations = operationsResult.operations;
-        const isALLOperations = operationsResult.isAll;
-
-        if (operations.length === 0) {
-            console.log('No pending operations to merge');
-            return {
-                success: true,
-                processedOperations: 0,
-                message: 'No pending operations'
+                error: 'Failed to get current index',
+                rebuildScheduled: true
             };
         }
 
@@ -457,7 +457,7 @@ export async function mergeOperationsToIndex(context, options = {}) {
         };
 
         console.log('Operations merge completed:', result);
-        return result;
+        return options.includeIndex ? { ...result, index: workingIndex } : result;
 
     } catch (error) {
         console.error('Error merging operations:', error);
@@ -487,277 +487,89 @@ export async function mergeOperationsToIndex(context, options = {}) {
  * @param {boolean} options.countOnly - 仅返回总数
  * @param {boolean} options.includeSubdirFiles - 是否包含子目录下的文件
  */
-export async function readIndex(context, options = {}) {
-    try {
-        const {
-            search = '',
-            directory = '',
-            start = 0,
-            count = 50,
-            channel = [],
-            listType = [],
-            accessStatus = [],
-            label = [],
-            fileType = [],
-            channelName = [],
-            includeTags = [],
-            excludeTags = [],
-            countOnly = false,
-            includeSubdirFiles = false
-        } = options;
-
-        // 将参数统一转换为数组形式
-        const channelArr = Array.isArray(channel) ? channel : (channel ? [channel] : []);
-        const listTypeArr = Array.isArray(listType) ? listType : (listType ? [listType] : []);
-        const accessStatusArr = Array.isArray(accessStatus) ? accessStatus : (accessStatus ? [accessStatus] : []);
-        const labelArr = Array.isArray(label) ? label : (label ? [label] : []);
-        const fileTypeArr = Array.isArray(fileType) ? fileType : (fileType ? [fileType] : []);
-        const channelNameArr = Array.isArray(channelName) ? channelName : (channelName ? [channelName] : []);
-
-        // 处理目录满足无头有尾的格式，根目录为空
-        const dirPrefix = directory === '' || directory.endsWith('/') ? directory : directory + '/';
-
-        // 处理挂起的操作
-        const mergeResult = await mergeOperationsToIndex(context);
-        if (!mergeResult.success) {
-            throw new Error('Failed to merge operations: ' + mergeResult.error);
-        }
-
-        // 获取当前索引
-        const index = await getIndex(context);
-        if (!index.success) {
-            throw new Error('Failed to get index');
-        }
-
-        let filteredFiles = index.files.filter(file => !isFileExpired(file.metadata));
-
-        // 目录过滤
-        if (directory) {
-            const normalizedDir = directory.endsWith('/') ? directory : directory + '/';
-            filteredFiles = filteredFiles.filter(file => {
-                const fileDir = file.metadata.Directory ? file.metadata.Directory : extractDirectory(file.id);
-                return fileDir.startsWith(normalizedDir) || file.metadata.Directory === directory;
-            });
-        }
-
-        // 渠道过滤（支持多选，OR 逻辑）
-        if (channelArr.length > 0) {
-            filteredFiles = filteredFiles.filter(file => 
-                channelArr.some(ch => file.metadata.Channel?.toLowerCase() === ch.toLowerCase())
-            );
-        }
-
-        // 列表类型过滤（黑白名单，支持多选，OR 逻辑）
-        // White=白名单, Block=黑名单, None=未设置
-        if (listTypeArr.length > 0) {
-            filteredFiles = filteredFiles.filter(file => {
-                const fileListType = file.metadata.ListType;
-                return listTypeArr.some(lt => {
-                    if (lt === 'None') {
-                        // 未设置：ListType 为空、undefined、null 或字符串 'None'
-                        return !fileListType || fileListType === '' || fileListType === 'None';
-                    }
-                    return fileListType === lt;
-                });
-            });
-        }
-
-        // 访问状态筛选（综合判断 ListType 和 Label，支持多选，OR 逻辑）
-        // 'normal' = 正常：非已屏蔽状态
-        // 'blocked' = 已屏蔽：ListType === 'Block' || (Label === 'adult' && ListType !== 'White')
-        // 注意：白名单优先，即使 Label 是 adult，只要 ListType 是 White 就是正常
-        if (accessStatusArr.length > 0) {
-            filteredFiles = filteredFiles.filter(file => {
-                const fileListType = file.metadata.ListType;
-                const fileLabel = file.metadata.Label;
-                const isBlocked = fileListType === 'Block' || (fileLabel === 'adult' && fileListType !== 'White');
-
-                return accessStatusArr.some(status => {
-                    if (status === 'normal') {
-                        return !isBlocked;
-                    } else if (status === 'blocked') {
-                        return isBlocked;
-                    }
-                    return false;
-                });
-            });
-        }
-
-        // 审查结果筛选 (label)（支持多选，OR 逻辑）
-        // 'normal' 匹配 Label 为 'everyone', 'None', '', null, undefined
-        // 'teen' 匹配 Label 为 'teen'
-        // 'adult' 匹配 Label 为 'adult'
-        if (labelArr.length > 0) {
-            filteredFiles = filteredFiles.filter(file => {
-                const fileLabel = file.metadata.Label;
-                return labelArr.some(lbl => {
-                    if (lbl === 'normal') {
-                        return !fileLabel || fileLabel === '' || fileLabel === 'None' || fileLabel === 'everyone';
-                    } else if (lbl === 'teen') {
-                        return fileLabel === 'teen';
-                    } else if (lbl === 'adult') {
-                        return fileLabel === 'adult';
-                    }
-                    return false;
-                });
-            });
-        }
-
-        // 文件类型筛选 (fileType)（支持多选，OR 逻辑）
-        // 'image' 匹配 FileType 以 'image/' 开头
-        // 'video' 匹配 FileType 以 'video/' 开头
-        // 'audio' 匹配 FileType 以 'audio/' 开头
-        // 'other' 匹配不属于以上三类的文件
-        if (fileTypeArr.length > 0) {
-            filteredFiles = filteredFiles.filter(file => {
-                const mimeType = file.metadata.FileType || '';
-                return fileTypeArr.some(ft => {
-                    if (ft === 'image') {
-                        return mimeType.startsWith('image/');
-                    } else if (ft === 'video') {
-                        return mimeType.startsWith('video/');
-                    } else if (ft === 'audio') {
-                        return mimeType.startsWith('audio/');
-                    } else if (ft === 'other') {
-                        return !mimeType.startsWith('image/') && 
-                               !mimeType.startsWith('video/') && 
-                               !mimeType.startsWith('audio/');
-                    }
-                    return false;
-                });
-            });
-        }
-
-        // 渠道名称筛选 (channelName)（支持多选，OR 逻辑）
-        // 支持 "type:name" 格式（如 "TelegramNew:default"）或单独的名称
-        if (channelNameArr.length > 0) {
-            filteredFiles = filteredFiles.filter(file => {
-                const fileChannel = file.metadata.Channel;
-                const fileChannelName = file.metadata.ChannelName;
-
-                return channelNameArr.some(filterValue => {
-                    // 检查是否是 "type:name" 格式
-                    if (filterValue.includes(':')) {
-                        const [type, name] = filterValue.split(':', 2);
-                        // 同时匹配渠道类型和名称（大小写敏感）
-                        return fileChannel === type && fileChannelName === name;
-                    } else {
-                        // 只匹配名称（向后兼容）
-                        return fileChannelName === filterValue;
-                    }
-                });
-            });
-        }
-
-        // 标签过滤（独立于搜索关键字）
-        if (includeTags.length > 0 || excludeTags.length > 0) {
-            filteredFiles = filteredFiles.filter(file => {
-                const fileTags = (file.metadata.Tags || []).map(t => t.toLowerCase());
-
-                // 检查必须包含的标签
-                if (includeTags.length > 0) {
-                    const hasAllIncludeTags = includeTags.every(tag => 
-                        fileTags.includes(tag.toLowerCase())
-                    );
-                    if (!hasAllIncludeTags) {
-                        return false;
-                    }
-                }
-
-                // 检查必须排除的标签
-                if (excludeTags.length > 0) {
-                    const hasAnyExcludeTag = excludeTags.some(tag => 
-                        fileTags.includes(tag.toLowerCase())
-                    );
-                    if (hasAnyExcludeTag) {
-                        return false;
-                    }
-                }
-
-                return true;
-            });
-        }
-
-        // 搜索过滤（仅关键字）
-        if (search) {
-            const searchLower = search.toLowerCase();
-            filteredFiles = filteredFiles.filter(file => {
-                const matchesKeyword =
-                    file.metadata.FileName?.toLowerCase().includes(searchLower) ||
-                    file.id.toLowerCase().includes(searchLower);
-                return matchesKeyword;
-            });
-        }
-
-        // 如果只需要总数
-        if (countOnly) {
-            return {
-                totalCount: filteredFiles.length,
-                indexLastUpdated: index.lastUpdated
-            };
-        }
-
-        // 分页处理
-        const totalCount = filteredFiles.length;
-
-        let resultFiles = filteredFiles;
-
-        // 计算当前目录下的直接文件（不包含子目录文件）
-        const directFiles = filteredFiles.filter(file => {
-            const fileDir = file.metadata.Directory ? file.metadata.Directory : extractDirectory(file.id);
-            return fileDir === dirPrefix;
-        });
-        const directFileCount = directFiles.length;
-
-        // 如果不包含子目录文件，获取当前目录下的直接文件
-        if (!includeSubdirFiles) {
-            resultFiles = directFiles;
-        }
-
-        if (count !== -1) {
-            const startIndex = Math.max(0, start);
-            const endIndex = startIndex + Math.max(1, count);
-            resultFiles = resultFiles.slice(startIndex, endIndex);
-        }
-
-        // 提取目录信息
-        const directories = new Set();
-        filteredFiles.forEach(file => {
-            const fileDir = file.metadata.Directory ? file.metadata.Directory : extractDirectory(file.id);
-            if (fileDir && fileDir.startsWith(dirPrefix)) {
-                const relativePath = fileDir.substring(dirPrefix.length);
-                const firstSlashIndex = relativePath.indexOf('/');
-                if (firstSlashIndex !== -1) {
-                    const subDir = dirPrefix + relativePath.substring(0, firstSlashIndex);
-                    directories.add(subDir);
-                }
+// Shared by indexed reads and the database fallback so filters and pagination agree.
+export async function queryFileChunks(chunks, options = {}, indexLastUpdated = Date.now()) {
+    const { search = '', directory = '', start = 0, count = 50, countOnly = false,
+        includeSubdirFiles = false, includeExpired = false, includeTags = [], excludeTags = [] } = options;
+    const arrays = {};
+    for (const key of ['channel', 'listType', 'accessStatus', 'label', 'fileType', 'channelName', 'retention']) {
+        const value = options[key];
+        arrays[key] = Array.isArray(value) ? value : (value ? [value] : []);
+    }
+    const dirPrefix = directory === '' || directory.endsWith('/') ? directory : directory + '/';
+    const searchLower = search.toLowerCase();
+    const files = [], directories = new Set();
+    const startIndex = Math.max(0, start), endIndex = startIndex + Math.max(1, count);
+    const now = Date.now();
+    let totalCount = 0, directFileCount = 0, pagePosition = 0;
+    for await (const chunk of chunks) {
+        for (const file of chunk) {
+            const m = file.metadata || {};
+            const expired = isFileExpired(m, now);
+            if (expired && !includeExpired) continue;
+            if (arrays.retention.length && !arrays.retention.some(value =>
+                value === 'expired' ? expired : value === 'temporary' ? isTemporaryFile(m) && !expired :
+                    value === 'permanent' && !isTemporaryFile(m))) continue;
+            const fileDir = m.Directory || extractDirectory(file.id);
+            if (directory && !fileDir.startsWith(dirPrefix) && m.Directory !== directory) continue;
+            if (arrays.channel.length && !arrays.channel.some(ch => m.Channel?.toLowerCase() === ch.toLowerCase())) continue;
+            if (arrays.listType.length && !arrays.listType.some(lt => lt === 'None' ? !m.ListType || m.ListType === 'None' : m.ListType === lt)) continue;
+            const blocked = m.ListType === 'Block' || (m.Label === 'adult' && m.ListType !== 'White');
+            if (arrays.accessStatus.length && !arrays.accessStatus.some(status => status === 'blocked' ? blocked : status === 'normal' && !blocked)) continue;
+            if (arrays.label.length && !arrays.label.some(lbl => lbl === 'normal' ? !m.Label || ['None', 'everyone'].includes(m.Label) : m.Label === lbl)) continue;
+            const mime = m.FileType || '';
+            if (arrays.fileType.length && !arrays.fileType.some(ft => ft === 'other' ? !/^(image|video|audio)\//.test(mime) : ['image', 'video', 'audio'].includes(ft) && mime.startsWith(ft + '/'))) continue;
+            if (arrays.channelName.length && !arrays.channelName.some(value => {
+                if (!value.includes(':')) return m.ChannelName === value;
+                const [type, name] = value.split(':', 2);
+                return m.Channel === type && m.ChannelName === name;
+            })) continue;
+            const tags = (m.Tags || []).map(tag => tag.toLowerCase());
+            if (!includeTags.every(tag => tags.includes(tag.toLowerCase())) || excludeTags.some(tag => tags.includes(tag.toLowerCase()))) continue;
+            if (searchLower && !m.FileName?.toLowerCase().includes(searchLower) && !file.id.toLowerCase().includes(searchLower)) continue;
+            totalCount++;
+            const direct = fileDir === dirPrefix;
+            if (direct) directFileCount++;
+            if (!countOnly && (includeSubdirFiles || direct)) {
+                if (count === -1 || (pagePosition >= startIndex && pagePosition < endIndex)) files.push(file);
+                pagePosition++;
             }
-        });
+            if (!countOnly && fileDir.startsWith(dirPrefix)) {
+                const relative = fileDir.substring(dirPrefix.length);
+                const slash = relative.indexOf('/');
+                if (slash !== -1) directories.add(dirPrefix + relative.substring(0, slash));
+            }
+        }
+    }
+    return { files, directories: Array.from(directories), totalCount, directFileCount,
+        directFolderCount: directories.size, indexLastUpdated, returnedCount: files.length, success: true };
+}
 
-        // 直接子文件夹数目
-        const directFolderCount = directories.size;
+async function* readIndexChunks(db, metadata) {
+    // Only retain one chunk and the requested page; count and directory results still scan all chunks.
+    for (let chunkId = 0; chunkId < metadata.chunkCount; chunkId++) {
+        const value = await db.get(`${INDEX_KEY}_${chunkId}`);
+        if (!value) throw new Error('Index chunk missing');
+        const chunk = JSON.parse(value);
+        if (!Array.isArray(chunk)) throw new Error('Invalid index chunk');
+        yield chunk;
+    }
+}
 
-        return {
-            files: resultFiles,
-            directories: Array.from(directories),
-            totalCount: totalCount,
-            directFileCount: directFileCount,
-            directFolderCount: directFolderCount,
-            indexLastUpdated: index.lastUpdated,
-            returnedCount: resultFiles.length,
-            success: true
-        };
-
+export async function readIndex(context, options = {}) {
+    let rebuildScheduled = false;
+    try {
+        const merged = await mergeOperationsToIndex(context, { includeIndex: true });
+        rebuildScheduled = merged.rebuildScheduled;
+        if (!merged.success) throw new Error('Failed to merge operations: ' + merged.error);
+        // A merge already loaded the files. Reuse them instead of reading every chunk again.
+        const chunks = merged.index ? [merged.index.files] : readIndexChunks(getDatabase(context.env), merged.metadata);
+        return await queryFileChunks(chunks, options, (merged.index || merged.metadata).lastUpdated);
     } catch (error) {
         console.error('Error reading index:', error);
-        return {
-            files: [],
-            directories: [],
-            totalCount: 0,
-            indexLastUpdated: Date.now(),
-            returnedCount: 0,
-            success: false,
-        };
+        if (!rebuildScheduled) context.waitUntil(rebuildIndex(context));
+        return { files: [], directories: [], totalCount: 0, indexLastUpdated: Date.now(),
+            returnedCount: 0, success: false };
     }
 }
 

@@ -12,17 +12,18 @@ export async function handleChunkMerge(context) {
     const db = getDatabase(env);
 
     // 解析表单数据
-    const formdata = await request.formData();
+    const formdata = context.formdata || await request.formData();
     context.formdata = formdata;
 
     let uploadId, totalChunks, originalFileName, originalFileType, uploadChannel;
     try {
         uploadId = formdata.get('uploadId');
-        totalChunks = parseInt(formdata.get('totalChunks'));
+        totalChunks = Number(formdata.get('totalChunks'));
         originalFileName = formdata.get('originalFileName');
         originalFileType = formdata.get('originalFileType');
 
-        if (!uploadId || !totalChunks || !originalFileName) {
+        if (!Number.isInteger(totalChunks) || totalChunks < 1 ||
+            ![uploadId, originalFileName].every(value => typeof value === 'string' && value)) {
             return createResponse('Error: Missing merge parameters', { status: 400 });
         }
 

@@ -80,6 +80,8 @@ CREATE INDEX IF NOT EXISTS idx_files_file_type ON files(file_type);
 CREATE INDEX IF NOT EXISTS idx_files_upload_ip ON files(upload_ip);
 CREATE INDEX IF NOT EXISTS idx_files_created_at ON files(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_files_tags ON files(tags);
+CREATE INDEX IF NOT EXISTS idx_files_expires_at ON files(json_extract(metadata, '$.ExpiresAt'), id)
+    WHERE json_type(metadata, '$.ExpiresAt') IN ('integer', 'real');
 
 CREATE INDEX IF NOT EXISTS idx_settings_category ON settings(category);
 
@@ -112,4 +114,3 @@ CREATE TRIGGER IF NOT EXISTS update_other_data_updated_at
     BEGIN
         UPDATE other_data SET updated_at = CURRENT_TIMESTAMP WHERE key = NEW.key;
     END;
-

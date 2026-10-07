@@ -5,6 +5,14 @@
 
 import { D1Database } from './d1Database.js';
 
+export const RETENTION_INDEX_PREFIX = 'manage@retention@expires@';
+
+export async function retentionIndexKey(fileId, expiresAt) {
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(fileId)));
+    const hash = Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
+    return `${RETENTION_INDEX_PREFIX}${String(Math.ceil(expiresAt)).padStart(16, '0')}@${hash}`;
+}
+
 /**
  * 创建数据库适配器
  * @param {Object} env - 环境变量
@@ -12,12 +20,12 @@ import { D1Database } from './d1Database.js';
  */
 export function createDatabaseAdapter(env) {
     // 检查是否配置了数据库
-    if (env.img_url && typeof env.img_url.get === 'function') {
-        // 使用KV存储
-        return new KVAdapter(env.img_url);
-    } else if (env.img_d1 && typeof env.img_d1.prepare === 'function') {
+    if (env.img_d1 && typeof env.img_d1.prepare === 'function') {
         // 使用D1数据库
         return new D1Database(env.img_d1);
+    } else if (env.img_url && typeof env.img_url.get === 'function') {
+        // 使用KV存储
+        return new KVAdapter(env.img_url);
     } else {
         console.error('No database configured. Please configure either KV (env.img_url) or D1 (env.img_d1).');
         return null;
@@ -36,6 +44,12 @@ class KVAdapter {
     // 直接代理到KV的方法
     async put(key, value, options) {
         options = options || {};
+        if (!key.startsWith('manage@') && Number.isFinite(options.metadata?.ExpiresAt)) {
+            const expiresAt = options.metadata.ExpiresAt;
+            // Write the marker first: failed writes cannot leave a file with no expiry index.
+            // ponytail: stale markers are rechecked during cleanup, avoiding a read on every metadata update.
+            await this.kv.put(await retentionIndexKey(key, expiresAt), '', { metadata: { fileId: key, expiresAt } });
+        }
         return await this.kv.put(key, value, options);
     }
 

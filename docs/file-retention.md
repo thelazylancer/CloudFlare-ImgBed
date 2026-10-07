@@ -37,17 +37,33 @@ curl -H "Authorization: Bearer $IMGBED_ADMIN_TOKEN" -F file=@image.jpg 'https://
 
 ## 到期访问与清理
 
-`/file/` 每次读取都会检查有效期；临时文件使用 `no-store`，到期后 GET、HEAD、Range 和图片处理请求均返回 404。管理列表、公开图库及随机图过滤已到期记录。存储渠道自己的公开直链，以及已下载或被第三方保存的副本，独立于图床链接。
+`/file/` 每次读取都会检查有效期；临时文件使用 `no-store`，到期后 GET、HEAD、Range 和图片处理请求均返回 404。管理列表默认隐藏已到期记录；后台可按临时、永久、过期筛选，卡片、列表和详情显示剩余时间或到期日期。公开图库及随机图始终过滤已到期记录。存储渠道自己的公开直链，以及已下载或被第三方保存的副本，独立于图床链接。
 
 - Worker：每分钟 Cron 自动清理。
 - Docker：服务每分钟自动清理，避免同一进程重叠执行。
-- Pages：没有 Cron，需外部定时任务以 `manage` Token 或管理员会话调用 `POST /api/manage/cleanupExpired`。到期访问也会触发该文件清理。
+- Pages：使用 `deploy/cleanup` 的独立 Cron Worker，每分钟以仅含 `manage` 权限的 Token 调用清理接口。到期访问也会触发该文件清理。
 
-每次清理最多扫描 5 条记录并保存游标，完整扫描后从头开始；响应包含 `scanned`、`deleted`、`failed`、`hasMore`。到期访问立即拒绝，物理清理可能滞后。大规模存储需改成按到期时间索引；外部任务也可在 `hasMore=true` 时继续调用。远端删除或索引写入失败时保留数据库记录，后续重试；不使用数据库 TTL 丢弃删除所需的信息。
+每次清理最多检查 3 个到期索引项并保存游标。D1 使用 `ExpiresAt` 表达式索引；KV 按到期时间排列索引，首次启用时每批另扫描 5 条旧记录补建索引，完成后不再全库扫描。无有效期的旧永久文件不受影响。响应包含 `scanned`、`deleted`、`failed`、`indexed`、`hasMore`、`backfillComplete`、`lastRunAt`。`hasMore=true` 时继续调用；KV 连续调用间隔至少 1.1 秒。到期访问立即拒绝，物理清理可能滞后。远端删除或索引写入失败时保留数据库记录，后续重试；不使用数据库 TTL 丢弃删除所需的信息。
 
 ```sh
 curl -X POST -H "Authorization: Bearer $IMGBED_ADMIN_TOKEN" https://img.example.com/api/manage/cleanupExpired
+
+# 查询最近清理时间、累计删除数、最近结果和失败文件
+curl -H "Authorization: Bearer $IMGBED_ADMIN_TOKEN" https://img.example.com/api/manage/cleanupExpired
 ```
+
+后台管理员可查看清理状态并点击“清理过期文件／重试”。GET 状态接口不会运行清理，也不会返回内部游标；最近失败文件最多保留 10 项，成功重试后移除。
+
+### Pages 定时任务配置
+
+在管理设置创建只具有 `manage` 权限的专用 Token，将 `deploy/cleanup/wrangler.toml` 的 `IMGBED_URL` 改为自己的 HTTPS 图床地址，然后执行：
+
+```sh
+npx wrangler secret put IMGBED_MANAGE_TOKEN --config deploy/cleanup/wrangler.toml
+npx wrangler deploy --config deploy/cleanup/wrangler.toml
+```
+
+每分钟最多发出 25 次独立清理请求，45 秒后停止，下一轮继续保存的游标。Worker 没有公开 HTTP 入口；Token 保存在 Worker Secret 中，不能提交到仓库。
 
 Telegram Bot API 只能删除发送后不足 48 小时的消息。24 小时文件可自动删除消息；保存 2–7 天需要在 Telegram 聊天中配置原生自动删除才能清理聊天中的媒体。超过 48 小时的记录到期仍会失效并清理本地引用，远端媒体依赖聊天自动删除。临时文件与永久文件建议使用不同聊天，避免自动删除永久媒体。
 
@@ -57,6 +73,10 @@ Worker 的 IMAGES 和 Docker 的原生图片处理支持临时文件。Pages 若
 
 ## 本地验证与前端来源
 
-执行 `npm run test:retention` 检查权限、上传、访问和清理逻辑，使用本地 KV/D1 与模拟存储请求，不接触真实文件。
+执行 `npm run check` 检查权限、上传、访问、清理、遥测脱敏、索引分页并编译 Pages Functions，使用本地 KV/D1 与模拟存储请求，不接触真实文件。GitHub 的 Check 工作流和 Worker 发布流程运行相同检查；Pages 的构建命令设为 `npm ci --include=dev && npm run check`，输出目录仍为 `frontend-dist`，检查失败会阻止发布。使用 Node.js 22。
+
+非法表单、缺失文件和错误分块参数返回 400。Telegram 已发送媒体但持久化失败时尝试撤回，返回 500；Telegram 上游失败返回 502。数据库故障或撤回失败会停止自动切换渠道，避免重复上传。
+
+遥测默认关闭。需要启用时，在后台明确开启遥测并配置自己的 `SENTRY_DSN`；只有其中一项不会发送事件。兼容旧环境变量 `disable_telemetry=false` 的显式开启设置。遥测会移除请求体、Cookie、用户信息、URL 查询参数及鉴权凭据，保留脱敏后的错误与栈位置；不再使用上游固定 DSN 或远端采样率请求。
 
 本仓库只包含 `frontend-dist`。前端改动保存在 `deploy/frontend/retention.patch`，基于 `MarSeventh/Sanyue-ImgHub` 的 `c969a6629dba610edfa6f4a9a28765b0e3d0dca1`。执行 `bash deploy/frontend/build.sh` 可从固定版本重新构建；升级上游前端时先合并该补丁，再生成静态资源。
