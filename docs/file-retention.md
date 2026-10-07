@@ -41,7 +41,7 @@ curl -H "Authorization: Bearer $IMGBED_ADMIN_TOKEN" -F file=@image.jpg 'https://
 
 - Worker：每分钟 Cron 自动清理。
 - Docker：服务每分钟自动清理，避免同一进程重叠执行。
-- Pages：使用 `deploy/cleanup` 的独立 Cron Worker，每分钟以仅含 `manage` 权限的 Token 调用清理接口。到期访问也会触发该文件清理。
+- Pages：使用 `deploy/cleanup` 的独立 Cron Worker，每天 08:00（香港时间，UTC 00:00）以仅含 `manage` 权限的 Token 调用清理接口。到期访问也会触发该文件清理。
 
 每次清理最多检查 3 个到期索引项并保存游标。D1 使用 `ExpiresAt` 表达式索引；KV 按到期时间排列索引，首次启用时每批另扫描 5 条旧记录补建索引，完成后不再全库扫描。无有效期的旧永久文件不受影响。响应包含 `scanned`、`deleted`、`failed`、`indexed`、`hasMore`、`backfillComplete`、`lastRunAt`。`hasMore=true` 时继续调用；KV 连续调用间隔至少 1.1 秒。到期访问立即拒绝，物理清理可能滞后。远端删除或索引写入失败时保留数据库记录，后续重试；不使用数据库 TTL 丢弃删除所需的信息。
 
@@ -63,7 +63,7 @@ npx wrangler secret put IMGBED_MANAGE_TOKEN --config deploy/cleanup/wrangler.tom
 npx wrangler deploy --config deploy/cleanup/wrangler.toml
 ```
 
-每分钟最多发出 25 次独立清理请求，45 秒后停止，下一轮继续保存的游标。Worker 没有公开 HTTP 入口；Token 保存在 Worker Secret 中，不能提交到仓库。
+每天触发一次，每轮最多发出 25 次独立清理请求，45 秒后停止，未完成的任务在下一次定时运行时从已保存的游标继续。链接仍按设定时间失效，物理清理通常会延后至每日任务执行时。Worker 没有公开 HTTP 入口；Token 保存在 Worker Secret 中，不能提交到仓库。
 
 Telegram Bot API 只能删除发送后不足 48 小时的消息。24 小时文件可自动删除消息；保存 2–7 天需要在 Telegram 聊天中配置原生自动删除才能清理聊天中的媒体。超过 48 小时的记录到期仍会失效并清理本地引用，远端媒体依赖聊天自动删除。临时文件与永久文件建议使用不同聊天，避免自动删除永久媒体。
 

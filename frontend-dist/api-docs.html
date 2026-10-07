@@ -214,7 +214,7 @@ curl --fail-with-body \
   "recentFailures": []
 }</code></pre>
       <p>时间单位均为 Unix 毫秒，尚未运行时仅返回 <code>totalDeleted</code> 和 <code>recentFailures</code> 的初始值。<code>recentFailures</code> 最多保留 10 项 <code>{"fileId":"example.jpg","failedAt":1791421200000}</code>，成功重试后移除；内部游标不对外返回。GET 不执行清理，GET/POST 成功响应均为 <code>no-store</code>。</p>
-      <p>Worker 和 Docker 每分钟自动清理。Pages 使用仓库 <code>deploy/cleanup</code> 中的 Cron Worker，以专用 manage Token 每分钟调用此接口；到期访问也会触发该文件清理。管理员后台可查看状态和手动清理。链接是否失效独立于后台清理进度。</p>
+      <p>Worker 和 Docker 每分钟自动清理。Pages 使用仓库 <code>deploy/cleanup</code> 中的 Cron Worker，以专用 manage Token 每天 08:00（香港时间，UTC 00:00）调用此接口；到期访问也会触发该文件清理。管理员后台可查看状态和手动清理。链接是否失效独立于后台清理进度。</p>
       <p>Telegram Bot API 仅能删除发送后不足 48 小时的消息。保存 2–7 天的媒体需配合聊天原生自动删除；超过 48 小时，本站链接仍失效并清理本地引用，远端媒体依赖聊天自动删除。临时与永久文件建议使用不同聊天。</p>
     </section>
     <section aria-labelledby="advanced">

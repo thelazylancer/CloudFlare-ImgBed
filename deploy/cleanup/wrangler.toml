@@ -8,7 +8,7 @@ preview_urls = false
 IMGBED_URL = "https://thelazy-imgs.pages.dev"
 
 [triggers]
-crons = ["* * * * *"]
+crons = ["0 0 * * *"] # Daily at 00:00 UTC (08:00 Hong Kong).
 
 [observability]
 enabled = true

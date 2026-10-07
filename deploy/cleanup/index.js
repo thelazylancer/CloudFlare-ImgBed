@@ -5,7 +5,7 @@ export async function runCleanup(env) {
     if (endpoint.protocol !== 'https:') throw new Error('Cleanup requires HTTPS');
     const totals = { batches: 0, deleted: 0, failed: 0, hasMore: false };
     const deadline = Date.now() + 45000;
-    // ponytail: 25 requests fit free Worker limits; the next minute continues the saved cursor.
+    // ponytail: 25 requests fit free Worker limits; the next scheduled run continues the saved cursor.
     while (totals.batches < 25 && Date.now() < deadline) {
         const response = await fetch(endpoint, {
             method: 'POST',
