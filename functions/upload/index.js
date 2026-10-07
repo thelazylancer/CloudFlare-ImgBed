@@ -517,6 +517,13 @@ async function uploadFileToTelegram(context, fullId, metadata, fileExt, fileName
         const fileInfo = telegramAPI.getFileInfo(response);
         const filePath = await telegramAPI.getFilePath(fileInfo.file_id);
         const id = fileInfo.file_id;
+        // Telegram sendPhoto always stores a JPEG rendition, even when the
+        // uploaded source was PNG. Keep the response MIME type aligned with
+        // the bytes fetched from Telegram so browsers can render the image.
+        if (sendFunction.url === 'sendPhoto') {
+            metadata.FileType = 'image/jpeg';
+            metadata.FileName = metadata.FileName.replace(/\.[^.]+$/, '.jpg');
+        }
         // 更新FileSize
         metadata.FileSize = (fileInfo.file_size / 1024 / 1024).toFixed(2);
 
