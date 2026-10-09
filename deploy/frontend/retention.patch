@@ -1,5 +1,5 @@
 diff --git a/src/components/dashboard/FileCard.vue b/src/components/dashboard/FileCard.vue
-index 4d606ac..91b6e93 100644
+index b5c93ab..9f24eb5 100644
 --- a/src/components/dashboard/FileCard.vue
 +++ b/src/components/dashboard/FileCard.vue
 @@ -7,6 +7,7 @@
@@ -310,7 +310,7 @@ index 99d013d..8883612 100644
          'update:uploadFolder',
          'update:autoRetry',
 diff --git a/src/locales/en.json b/src/locales/en.json
-index bfbcf31..e8c50b4 100644
+index 29c9876..b6eff5f 100644
 --- a/src/locales/en.json
 +++ b/src/locales/en.json
 @@ -1,4 +1,22 @@
@@ -359,7 +359,7 @@ index bfbcf31..e8c50b4 100644
      "uploadChannel": "Upload Channel",
      "channelType": "Channel Type",
 diff --git a/src/locales/zh-CN.json b/src/locales/zh-CN.json
-index ec7f114..106cf99 100644
+index d72779b..d9ab5d3 100644
 --- a/src/locales/zh-CN.json
 +++ b/src/locales/zh-CN.json
 @@ -1,4 +1,22 @@
@@ -408,7 +408,7 @@ index ec7f114..106cf99 100644
      "uploadChannel": "上传渠道",
      "channelType": "渠道类型",
 diff --git a/src/utils/fileManager.js b/src/utils/fileManager.js
-index 6d00a27..e5aba6f 100644
+index 97718d8..9a42213 100644
 --- a/src/utils/fileManager.js
 +++ b/src/utils/fileManager.js
 @@ -204,6 +204,9 @@ class FileManager {
@@ -422,10 +422,10 @@ index 6d00a27..e5aba6f 100644
      }
  
 diff --git a/src/views/AdminDashBoard.vue b/src/views/AdminDashBoard.vue
-index 84bcfb2..b05b3d5 100644
+index 601f9bd..0ef769f 100644
 --- a/src/views/AdminDashBoard.vue
 +++ b/src/views/AdminDashBoard.vue
-@@ -20,6 +20,18 @@
+@@ -67,6 +67,18 @@
                  </template>
              </AdminHeader>
              <el-main class="main-container" :class="{ 'has-batch-toolbar': selectedFiles.length > 0 }">
@@ -444,7 +444,7 @@ index 84bcfb2..b05b3d5 100644
              <!-- 目录导航 -->
              <div class="breadcrumb-container">
                  <DashboardCheckbox
-@@ -500,6 +512,9 @@ data() {
+@@ -553,6 +565,9 @@ data() {
          loading: false, // 加载状态
          currentPath: '', // 当前文件夹路径
          refreshLoading: false,
@@ -454,7 +454,7 @@ index 84bcfb2..b05b3d5 100644
          showTagDialog: false, // 标签管理对话框
          showBatchTagDialog: false, // 批量标签管理对话框
          currentTagFile: '', // 当前标签管理的文件
-@@ -518,6 +533,7 @@ data() {
+@@ -571,6 +586,7 @@ data() {
              label: [],         // 审查结果: 'normal', 'teen', 'adult'
              fileType: [],      // 文件类型: 'image', 'video', 'audio', 'other'
              channel: [],       // 渠道类型: 'TelegramNew', 'CloudflareR2', 'S3', 'Discord', 'HuggingFace', 'WebDAV', 'External'
@@ -462,7 +462,7 @@ index 84bcfb2..b05b3d5 100644
              channelName: []    // 渠道名称: 动态获取
          },
          channelNameOptions: [], // 动态从文件列表中提取
-@@ -924,6 +940,42 @@ methods: {
+@@ -1028,6 +1044,42 @@ methods: {
          this.refreshFileList();
      },
      // 处理筛选变化（来自 FilterDropdown 组件）
@@ -505,7 +505,7 @@ index 84bcfb2..b05b3d5 100644
      handleFilterChange({ type, filters }) {
          this.filters = filters;
          this.currentPage = 1; // 重置到第一页
-@@ -936,6 +988,7 @@ methods: {
+@@ -1040,6 +1092,7 @@ methods: {
              label: [],
              fileType: [],
              channel: [],
@@ -513,7 +513,7 @@ index 84bcfb2..b05b3d5 100644
              channelName: []
          };
          this.currentPage = 1;
-@@ -2140,6 +2193,7 @@ mounted() {
+@@ -2253,6 +2306,7 @@ mounted() {
      this.loading = true;
      // 路由守卫已通过 /api/auth/sessionCheck 验证认证状态
      this.showLogoutButton = this.$store.state.adminLoggedIn;
@@ -521,7 +521,7 @@ index 84bcfb2..b05b3d5 100644
      // 首次加载时刷新文件列表
      this.refreshFileList()
          .then(() => {
-@@ -2176,6 +2230,10 @@ beforeUnmount() {
+@@ -2290,6 +2344,10 @@ beforeUnmount() {
  <style scoped src="@/styles/admin-common.css"></style>
  
  <style scoped>

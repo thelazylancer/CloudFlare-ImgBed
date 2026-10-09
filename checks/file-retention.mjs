@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { Miniflare } from 'miniflare';
+import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { createS3Client, normalizeS3UserAgent } from '../functions/utils/storage/s3Client.js';
 import { parseRetention, canStorePermanently, isFileExpired } from '../functions/utils/fileRetention.js';
 import { getDatabase } from '../functions/utils/databaseAdapter.js';
 import { rebuildIndex, readIndex } from '../functions/utils/indexManager.js';
@@ -97,6 +99,28 @@ const config = { auth: { admin: { adminUsername: 'admin', adminPassword: 'local-
     } } };
 
 try {
+    for (const invalid of ['bad\nagent', '中文', 123]) assert.throws(() => normalizeS3UserAgent(invalid));
+    for (const userAgent of ['', '  imgbed-retention-check  ']) {
+        const requests = [];
+        const client = createS3Client({ endpoint: 'https://s3.test', region: 'auto',
+            accessKeyId: 'local-key', secretAccessKey: 'local-secret', pathStyle: true, userAgent }, {
+            requestHandler: { handle: async request => {
+                requests.push(request);
+                return { response: { statusCode: 200, headers: {}, body: new Uint8Array() } };
+            } },
+        });
+        try {
+            await client.send(new PutObjectCommand({ Bucket: 'retention', Key: 'example.txt', Body: 'test' }));
+            await client.send(new DeleteObjectCommand({ Bucket: 'retention', Key: 'example.txt' }));
+            assert.deepEqual(requests.map(request => request.method), ['PUT', 'DELETE']);
+            for (const request of requests) {
+                assert.equal(request.path, '/retention/example.txt');
+                if (userAgent) assert.equal(request.headers['user-agent'], userAgent.trim());
+                else assert.match(request.headers['user-agent'], /aws-sdk-js/);
+            }
+        } finally { client.destroy(); }
+    }
+
     assert.equal(parseRetention(new URLSearchParams()), 86400);
     assert.equal(parseRetention(new URLSearchParams('expiresIn=604800')), 604800);
     assert.equal(parseRetention(new URLSearchParams('permanent=true')), null);

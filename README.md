@@ -2,13 +2,13 @@
     <a href="https://github.com/MarSeventh/CloudFlare-ImgBed"><img width="80%" alt="logo" src="readme/banner.png" /></a>
     <p><em>🗂️ Beyond image hosting: an all-in-one, open-source file management hub.</em></p>
     <p>
-        <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/blob/main/README_zh.md">简体中文</a> | <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/blob/main/README.md">English</a> | <a href="https://cfbed.sanyue.de/en">Official Website</a>
+        <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/blob/main/README_zh.md">简体中文</a> | <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/blob/main/README.md">English</a> | <a href="https://cfbed.sanyue.de/en">Official Website</a> | <a href="https://t.me/sanyue_club">Telegram Channel</a>
     </p>
     <p align="center">
         <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/blob/main/LICENSE"><img src="https://img.shields.io/github/license/MarSeventh/CloudFlare-ImgBed" alt="License" /></a>
         <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/releases"><img src="https://img.shields.io/github/release/MarSeventh/CloudFlare-ImgBed" alt="latest version" /></a>
-        <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/releases"><img src="https://img.shields.io/github/downloads/MarSeventh/CloudFlare-ImgBed/total?color=%239F7AEA&logo=github" alt="Downloads" /></a>
         <a href="https://hub.docker.com/r/marseventh/cloudflare-imgbed"><img src="https://img.shields.io/docker/pulls/marseventh/cloudflare-imgbed" alt="Docker Pulls" /></a>
+        <a href="https://t.me/sanyue_club"><img src="https://img.shields.io/badge/-Sanyue-26A5E4?logo=telegram&logoColor=white" alt="Telegram Sanyue" /></a>
         <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/stargazers"><img src="https://img.shields.io/github/stars/MarSeventh/CloudFlare-ImgBed" alt="Stars" /></a>
         <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/network/members"><img src="https://img.shields.io/github/forks/MarSeventh/CloudFlare-ImgBed" alt="Forks" /></a>
         <a href="https://atomgit.com/MarSeventh/CloudFlare-ImgBed"><img src="https://atomgit.com/MarSeventh/CloudFlare-ImgBed/star/badge.svg" alt="G-star" /></a>
@@ -23,12 +23,12 @@
 
 > [!IMPORTANT]
 >
-> **If you encounter issues, please check the [announcement](https://github.com/MarSeventh/CloudFlare-ImgBed/discussions/categories/announcements) first. Important notifications and non-compatible updates will be explained in the announcement!**
+> **If you encounter issues, please check the [announcements](https://github.com/MarSeventh/CloudFlare-ImgBed/discussions/categories/announcements) and [Telegram channel](https://t.me/sanyue_club) first. Important notices and breaking changes will be explained in the announcements!**
 
 
 # 1. 💡 Introduction
 
-CloudFlare ImgBed is a self-hosted image and file hosting solution for Docker and serverless environments, bringing **Telegram**, **Discord**, **Cloudflare R2**, **S3-compatible storage**, **Hugging Face**, **WebDAV**, and more into one management interface. It provides file management, authentication, directory organization, content moderation, a RESTful API, and WebDAV for personal image hosting, website asset management, and lightweight file distribution. **[View all features →](https://cfbed.sanyue.de/en/guide/features.html)**
+CloudFlare ImgBed is a self-hosted image and file hosting solution for Docker and serverless environments, bringing **Telegram**, **Discord**, **Cloudflare R2**, **S3-compatible storage**, **Hugging Face**, **WebDAV**, and more into one management interface. It provides file management, authentication, directory organization, content moderation, a RESTful API, and WebDAV, with a growing range of personalized AI capabilities such as image tag recognition. It is suited to personal image hosting, website asset management, and lightweight file distribution. **[View all features →](https://cfbed.sanyue.de/en/guide/features.html)**
 
 ![CloudFlare](readme/海报.png)
 
@@ -66,9 +66,9 @@ CloudFlare ImgBed is a self-hosted image and file hosting solution for Docker an
   <tr>
     <td align="center"><sub>Provides CDN acceleration and security protection</sub></td>
     <td align="center"><sub>Provides CDN acceleration and security protection</sub></td>
-    <td align="center"><sub>Provides highly available API services for leading AI models. New users receive a first top-up discount and free credits.</sub></td>
-    <td align="center"><sub>Provides stable and high-quality cloud computing resources</sub></td>
-    <td align="center"><sub>Provides stable and high-quality cloud computing resources</sub></td>
+    <td align="center"><sub>Provide premium, stable, and budget-friendly LLM APIs. Generate text, images, and code all in one place. Sign up via our link for free credits and exclusive discounts!</sub></td>
+    <td align="center"><sub>Provides stable and high-quality cloud computing resources. Sign up via our link for exclusive discounts!</sub></td>
+    <td align="center"><sub>Provides stable and high-quality cloud computing resources. Sign up via our link for exclusive discounts!</sub></td>
     <td align="center"><sub>Provides community support</sub></td>
   </tr>
 </table>

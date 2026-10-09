@@ -79,4 +79,4 @@ Worker 的 IMAGES 和 Docker 的原生图片处理支持临时文件。Pages 若
 
 遥测默认关闭。需要启用时，在后台明确开启遥测并配置自己的 `SENTRY_DSN`；只有其中一项不会发送事件。兼容旧环境变量 `disable_telemetry=false` 的显式开启设置。遥测会移除请求体、Cookie、用户信息、URL 查询参数及鉴权凭据，保留脱敏后的错误与栈位置；不再使用上游固定 DSN 或远端采样率请求。
 
-本仓库只包含 `frontend-dist`。前端改动保存在 `deploy/frontend/retention.patch`，基于 `MarSeventh/Sanyue-ImgHub` 的 `c969a6629dba610edfa6f4a9a28765b0e3d0dca1`。执行 `bash deploy/frontend/build.sh` 可从固定版本重新构建；升级上游前端时先合并该补丁，再生成静态资源。
+本仓库只包含 `frontend-dist`。前端改动保存在 `deploy/frontend/retention.patch`，基于 `MarSeventh/Sanyue-ImgHub` 的 `f07229e54b1e3e1de80e1d6902d38b5e0c3d4462`。执行 `bash deploy/frontend/build.sh` 可从固定版本重新构建；升级上游前端时先合并该补丁，再生成静态资源。

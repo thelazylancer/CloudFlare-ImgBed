@@ -7,7 +7,7 @@ trap 'rm -rf "$imgbed_build"' EXIT
 
 # This repository ships built assets; pin the upstream source so the patch stays reproducible.
 git clone --filter=blob:none --no-checkout https://github.com/MarSeventh/Sanyue-ImgHub.git "$imgbed_build/source"
-git -C "$imgbed_build/source" checkout --detach c969a6629dba610edfa6f4a9a28765b0e3d0dca1
+git -C "$imgbed_build/source" checkout --detach f07229e54b1e3e1de80e1d6902d38b5e0c3d4462
 git -C "$imgbed_build/source" apply "$imgbed_root/deploy/frontend/retention.patch"
 cp "$imgbed_root/docs/api.html" "$imgbed_build/source/public/api-docs.html"
 cd "$imgbed_build/source"

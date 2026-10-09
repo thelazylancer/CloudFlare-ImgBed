@@ -2,13 +2,13 @@
     <a href="https://github.com/MarSeventh/CloudFlare-ImgBed"><img width="80%" alt="logo" src="readme/banner.png" /></a>
     <p><em>🗂️ 打破图床边界，构建你的专属开源文件托管引擎。</em></p>
     <p>
-        <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/blob/main/README_zh.md">简体中文</a> | <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/blob/main/README.md">English</a> | <a href="https://cfbed.sanyue.de">官方网站</a>
+        <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/blob/main/README_zh.md">简体中文</a> | <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/blob/main/README.md">English</a> | <a href="https://cfbed.sanyue.de">官方网站</a> | <a href="https://t.me/sanyue_club">Telegram 频道</a>
     </p>
     <p align="center">
         <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/blob/main/LICENSE"><img src="https://img.shields.io/github/license/MarSeventh/CloudFlare-ImgBed" alt="License" /></a>
         <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/releases"><img src="https://img.shields.io/github/release/MarSeventh/CloudFlare-ImgBed" alt="latest version" /></a>
-        <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/releases"><img src="https://img.shields.io/github/downloads/MarSeventh/CloudFlare-ImgBed/total?color=%239F7AEA&logo=github" alt="Downloads" /></a>
         <a href="https://hub.docker.com/r/marseventh/cloudflare-imgbed"><img src="https://img.shields.io/docker/pulls/marseventh/cloudflare-imgbed" alt="Docker Pulls" /></a>
+        <a href="https://t.me/sanyue_club"><img src="https://img.shields.io/badge/-Sanyue-26A5E4?logo=telegram&logoColor=white" alt="Telegram Sanyue" /></a>
         <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/stargazers"><img src="https://img.shields.io/github/stars/MarSeventh/CloudFlare-ImgBed" alt="Stars" /></a>
         <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/network/members"><img src="https://img.shields.io/github/forks/MarSeventh/CloudFlare-ImgBed" alt="Forks" /></a>
         <a href="https://atomgit.com/MarSeventh/CloudFlare-ImgBed"><img src="https://atomgit.com/MarSeventh/CloudFlare-ImgBed/star/badge.svg" alt="G-star" /></a>
@@ -23,12 +23,12 @@
 
 > [!IMPORTANT]
 >
-> **遇到问题请务必先查看[公告](https://github.com/MarSeventh/CloudFlare-ImgBed/discussions/categories/announcements)，重要通知和非兼容性更新内容均会在公告中说明！**
+> **遇到问题请务必先查看[公告](https://github.com/MarSeventh/CloudFlare-ImgBed/discussions/categories/announcements)和[Telegram频道](https://t.me/sanyue_club)信息，重要通知和非兼容性更新内容均会在公告中说明！**
 
 
 # 1. 💡 项目介绍
 
-CloudFlare ImgBed 是支持 Docker 与 Serverless 部署的自建图床和文件托管方案，可将 **Telegram**、**Discord**、**Cloudflare R2**、**S3 兼容存储**、**Hugging Face**、**WebDAV** 等渠道统一接入一个管理界面。项目提供文件管理、身份认证、目录组织、内容审核、RESTful API 与 WebDAV，适用于个人图床、网站资源管理和轻量文件分发。 **[查看完整功能 →](https://cfbed.sanyue.de/guide/features.html)**
+CloudFlare ImgBed 是支持 Docker 与 Serverless 部署的自建图床和文件托管方案，可将 **Telegram**、**Discord**、**Cloudflare R2**、**S3 兼容存储**、**Hugging Face**、**WebDAV** 等渠道统一接入一个管理界面。项目提供文件管理、身份认证、目录组织、内容审核、RESTful API 与 WebDAV，同时也在不断增加 AI 驱动的图片标签识别等个性化能力，适用于个人图床、网站资源管理和轻量文件分发。 **[查看完整功能 →](https://cfbed.sanyue.de/guide/features.html)**
 
 ![CloudFlare](readme/海报.png)
 
@@ -66,12 +66,14 @@ CloudFlare ImgBed 是支持 Docker 与 Serverless 部署的自建图床和文件
   <tr>
     <td align="center"><sub>提供 CDN 加速及安全防护</sub></td>
     <td align="center"><sub>提供 CDN 加速及安全防护</sub></td>
-    <td align="center"><sub>提供全面、高可用性的顶级大模型 API 服务，人民币 1:1 充值，新用户立享首充折扣与免费额度</sub></td>
-    <td align="center"><sub>提供稳定、优质的云计算资源</sub></td>
-    <td align="center"><sub>提供稳定、优质的云计算资源</sub></td>
+    <td align="center"><sub>提供稳定、高性价比的顶级大模型 API 服务，一站搞定文案、图片和代码，通过本项目链接注册立享充值折扣与免费额度！</sub></td>
+    <td align="center"><sub>提供稳定、优质的云计算资源，通过本项目链接注册立享超值优惠！</sub></td>
+    <td align="center"><sub>提供稳定、优质的云计算资源，通过本项目链接注册立享超值优惠！</sub></td>
     <td align="center"><sub>提供社区支持</sub></td>
   </tr>
 </table>
+
+
 
 
 # 2. 🖥️ 在线演示
