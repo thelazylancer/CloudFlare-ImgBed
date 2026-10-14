@@ -45,10 +45,7 @@ jobs:
       - name: Sync upstream changes
         id: sync
         if: steps.breaking_guard.outputs.blocked != 'true'
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git merge --no-edit refs/remotes/cloudflare-imgbed-upstream/main
+        run: bash .github/workflows/scripts/merge-upstream.sh refs/remotes/cloudflare-imgbed-upstream/main
 
       - name: Set up Node.js
         if: steps.sync.outcome == 'success'
@@ -90,11 +87,11 @@ jobs:
           {
             echo "## ⚠️ 上游同步未完成 / Upstream synchronization did not complete"
             echo
-            echo "请查看失败步骤：Sync upstream changes 中的 CONFLICT 表示上游与本 Fork 的定制功能存在合并冲突；Validate merged changes 失败表示合并后检查未通过；Push validated changes 失败则需检查推送权限或分支是否已更新。"
+            echo "请查看失败步骤：Sync upstream changes 失败且日志里仍有源码 CONFLICT，表示上游与本 Fork 的定制功能存在合并冲突。frontend-dist 的构建产物冲突会自动保留本 Fork 版本。Validate merged changes 失败表示合并后检查未通过；Push validated changes 失败则需检查推送权限或分支是否已更新。"
             echo
-            echo "Check the failed step: CONFLICT during merge requires resolving upstream changes together with this fork's customizations; validation failures require fixing the merged code; push failures require checking permissions or concurrent branch updates."
+            echo "Check the failed step: a source CONFLICT means upstream changes overlap this fork's customizations. frontend-dist asset conflicts are kept from this fork automatically. Validation failures require fixing the merged code; push failures require checking permissions or concurrent branch updates."
             echo
-            echo "合并冲突请在本地解决并运行 npm run check 后推送，再重新运行本工作流。保留文件期限、清理任务和域名跳转等定制功能，避免用上游版本直接覆盖。"
+            echo "源码冲突请在本地解决并运行 npm run check 后推送，再重新运行本工作流。保留文件期限、清理任务和域名跳转等定制功能，避免用上游版本直接覆盖。"
             echo
-            echo "Resolve conflicts locally, preserve retention, cleanup and domain customizations, run npm run check, push, and rerun this workflow."
+            echo "Resolve source conflicts locally, preserve retention, cleanup and domain customizations, run npm run check, push, and rerun this workflow."
           } >> "$GITHUB_STEP_SUMMARY"
