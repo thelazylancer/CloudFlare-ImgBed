@@ -39,6 +39,7 @@ import { isFileExpired, isTemporaryFile } from './fileRetention.js';
  */
 
 import { getDatabase, checkDatabaseConfig } from './databaseAdapter.js';
+import { getFileTypeCategory } from './mimeTypes.js';
 
 const INDEX_KEY = 'manage@index';
 const INDEX_META_KEY = 'manage@index@meta'; // 索引元数据键
@@ -517,8 +518,7 @@ export async function queryFileChunks(chunks, options = {}, indexLastUpdated = D
             const blocked = m.ListType === 'Block' || (m.Label === 'adult' && m.ListType !== 'White');
             if (arrays.accessStatus.length && !arrays.accessStatus.some(status => status === 'blocked' ? blocked : status === 'normal' && !blocked)) continue;
             if (arrays.label.length && !arrays.label.some(lbl => lbl === 'normal' ? !m.Label || ['None', 'everyone'].includes(m.Label) : m.Label === lbl)) continue;
-            const mime = m.FileType || '';
-            if (arrays.fileType.length && !arrays.fileType.some(ft => ft === 'other' ? !/^(image|video|audio)\//.test(mime) : ['image', 'video', 'audio'].includes(ft) && mime.startsWith(ft + '/'))) continue;
+            if (arrays.fileType.length && !arrays.fileType.includes(getFileTypeCategory(m.FileType))) continue;
             if (arrays.channelName.length && !arrays.channelName.some(value => {
                 if (!value.includes(':')) return m.ChannelName === value;
                 const [type, name] = value.split(':', 2);

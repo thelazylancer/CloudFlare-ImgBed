@@ -7,6 +7,7 @@ import { DiscordAPI } from '../utils/storage/discordAPI';
 import { CreateMultipartUploadCommand, UploadPartCommand, AbortMultipartUploadCommand } from "@aws-sdk/client-s3";
 import { getDatabase, checkDatabaseConfig } from '../utils/databaseAdapter.js';
 import { fetchPageConfig } from '../utils/sysConfig.js';
+import { resolveFileType } from '../utils/mimeTypes.js';
 
 // 初始化分块上传
 export async function initializeChunkedUpload(context) {
@@ -18,7 +19,7 @@ export async function initializeChunkedUpload(context) {
         const formdata = context.formdata || await request.formData();
 
         const originalFileName = formdata.get('originalFileName');
-        const originalFileType = formdata.get('originalFileType');
+        const originalFileType = resolveFileType(originalFileName, formdata.get('originalFileType'));
         const totalChunks = Number(formdata.get('totalChunks'));
 
         if (typeof originalFileName !== 'string' || !originalFileName || typeof originalFileType !== 'string' || !originalFileType || !Number.isInteger(totalChunks) || totalChunks < 1) {
@@ -101,7 +102,7 @@ export async function handleChunkUpload(context) {
         const totalChunks = Number(formdata.get('totalChunks'));
         const uploadId = formdata.get('uploadId');
         const originalFileName = formdata.get('originalFileName');
-        const originalFileType = formdata.get('originalFileType');
+        const originalFileType = resolveFileType(originalFileName, formdata.get('originalFileType'));
 
         if (!chunk || typeof chunk === 'string' || !Number.isInteger(chunkIndex) || chunkIndex < 0 ||
             !Number.isInteger(totalChunks) || chunkIndex >= totalChunks ||
@@ -389,7 +390,9 @@ async function uploadSingleChunkToR2Multipart(context, chunkData, chunkIndex, to
         if (chunkIndex === 0) {
             finalFileId = await buildUniqueFileId(context, originalFileName, originalFileType);
 
-            const multipartUpload = await R2DataBase.createMultipartUpload(finalFileId);
+            const multipartUpload = await R2DataBase.createMultipartUpload(finalFileId, {
+                httpMetadata: { contentType: originalFileType },
+            });
             const multipartInfo = {
                 uploadId: multipartUpload.uploadId,
                 key: finalFileId
@@ -863,7 +866,7 @@ async function retrySingleChunk(context, chunk, uploadChannel, maxRetries = 5, r
 
         const chunkData = chunkRecord.value;
         const originalFileName = chunkRecord.metadata?.originalFileName || 'unknown';
-        const originalFileType = chunkRecord.metadata?.originalFileType || 'application/octet-stream';
+        const originalFileType = resolveFileType(originalFileName, chunkRecord.metadata?.originalFileType);
         const uploadId = chunkRecord.metadata?.uploadId;
         const totalChunks = chunkRecord.metadata?.totalChunks || 1;
 

@@ -12,6 +12,7 @@ import {
 import { getDatabase } from '../utils/databaseAdapter.js';
 import { isFileExpired, isTemporaryFile } from '../utils/fileRetention.js';
 import { deleteExpiredFile } from '../utils/retentionCleanup.js';
+import { normalizeFileType } from '../utils/mimeTypes.js';
 import { authenticate, AUTH_SCOPE } from '../utils/auth/authCore.js';
 import {
     resolveDiscordCredentials,
@@ -90,7 +91,7 @@ export async function onRequest(context) {  // Contents of context object
 
     const fileName = imgRecord.metadata?.FileName || fileId;
     const encodedFileName = encodeURIComponent(fileName);
-    const fileType = imgRecord.metadata?.FileType || null;
+    const fileType = normalizeFileType(imgRecord.metadata?.FileType) || null;
 
     // 检查文件可访问状态
     let accessRes = await returnWithCheck(context, imgRecord);
