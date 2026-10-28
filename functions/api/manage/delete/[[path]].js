@@ -40,7 +40,9 @@ export async function onRequest(context) {
             }];
 
             const deletedFiles = [];
+            const missingFiles = [];
             const failedFiles = [];
+            const details = [];
 
             while (folderQueue.length > 0) {
                 const currentFolder = folderQueue.shift();
@@ -60,9 +62,13 @@ export async function onRequest(context) {
                     const fileId = file.name;
                     const cdnUrl = `https://${url.hostname}/file/${fileId}`;
 
-                    const success = await deleteFile(env, fileId, cdnUrl, url);
+                    const result = await deleteFile(env, fileId, cdnUrl, url);
+                    const success = !!(result && result.deleted);
+                    details.push({ fileId, success, existed: !!result?.existed, error: success ? '' : 'Delete file failed' });
                     if (success) {
+                        // 记录不存在也计入 deleted，由 missing/details 标识。
                         deletedFiles.push(fileId);
+                        if (!result.existed) missingFiles.push(fileId);
                     } else {
                         failedFiles.push(fileId);
                     }
@@ -85,7 +91,9 @@ export async function onRequest(context) {
             return new Response(JSON.stringify({
                 success: true,
                 deleted: deletedFiles,
-                failed: failedFiles
+                failed: failedFiles,
+                missing: missingFiles,
+                details
             }), {
                 headers: { 'Content-Type': 'application/json', ...corsHeaders }
             });
@@ -108,17 +116,19 @@ export async function onRequest(context) {
         const fileId = params.path.split(',').join('/');
         const cdnUrl = `https://${url.hostname}/file/${fileId}`;
 
-        const success = await deleteFile(env, fileId, cdnUrl, url);
-        if (!success) {
+        const result = await deleteFile(env, fileId, cdnUrl, url);
+        if (!result || !result.deleted) {
             throw new Error('Delete file failed');
         } else {
-            // 从索引中删除文件
+            // 记录不存在时也可能有残留索引，因此仍需清理。
             waitUntil(removeFileFromIndex(context, fileId));
         }
 
         return new Response(JSON.stringify({
             success: true,
-            fileId: fileId
+            fileId: fileId,
+            // 请求成功不代表记录曾存在，existed 用于区分这两种情况。
+            existed: result.existed
         }), {
             headers: { 'Content-Type': 'application/json', ...corsHeaders }
         });
@@ -140,10 +150,10 @@ export async function deleteFile(env, fileId, cdnUrl, url, { expiredOnly = false
         const db = getDatabase(env);
         const img = await db.getWithMetadata(fileId);
 
-        // 如果文件记录不存在，直接返回成功（幂等删除）
+        // 如果文件记录不存在，直接返回成功（幂等删除），标记 existed=false 供调用方区分
         if (!img || (img.value === null && !img.metadata)) {
             console.warn(`File ${fileId} not found in database, skipping delete`);
-            return true;
+            return { deleted: true, existed: false };
         }
         // Recheck the current record: a stale cleanup listing must not delete a renewed file.
         if (expiredOnly && !isFileExpired(img.metadata)) return true;
@@ -195,10 +205,10 @@ export async function deleteFile(env, fileId, cdnUrl, url, { expiredOnly = false
             await purgePublicFileListCache(url.origin, normalizedFolder);
         }
 
-        return true;
+        return { deleted: true, existed: true };
     } catch (e) {
         console.error('Delete file failed:', e);
-        return false;
+        return { deleted: false, existed: true };
     }
 }
 

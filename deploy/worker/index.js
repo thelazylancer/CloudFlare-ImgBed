@@ -30,6 +30,7 @@ import * as apiManageCusConfigBlockipList from '../../functions/api/manage/cusCo
 import * as apiManageCusConfigFiles from '../../functions/api/manage/cusConfig/files.js';
 import * as apiManageCusConfigList from '../../functions/api/manage/cusConfig/list.js';
 import * as apiManageCusConfigWhiteip from '../../functions/api/manage/cusConfig/whiteip.js';
+import * as apiManageDedupScan from '../../functions/api/manage/dedup/scan.js';
 import * as apiManageDeleteBatch from '../../functions/api/manage/delete/batch.js';
 import * as apiManageSysConfigAi from '../../functions/api/manage/sysConfig/ai.js';
 import * as apiManageSysConfigOthers from '../../functions/api/manage/sysConfig/others.js';
@@ -86,6 +87,7 @@ const routes = [
     { path: '/api/manage/cusConfig/files', module: apiManageCusConfigFiles, middlewares: [mw_root, mw_api, mw_api_manage] },
     { path: '/api/manage/cusConfig/list', module: apiManageCusConfigList, middlewares: [mw_root, mw_api, mw_api_manage] },
     { path: '/api/manage/cusConfig/whiteip', module: apiManageCusConfigWhiteip, middlewares: [mw_root, mw_api, mw_api_manage] },
+    { path: '/api/manage/dedup/scan', module: apiManageDedupScan, middlewares: [mw_root, mw_api, mw_api_manage] },
     { path: '/api/manage/delete/batch', module: apiManageDeleteBatch, middlewares: [mw_root, mw_api, mw_api_manage] },
     { path: '/api/manage/sysConfig/ai', module: apiManageSysConfigAi, middlewares: [mw_root, mw_api, mw_api_manage] },
     { path: '/api/manage/sysConfig/others', module: apiManageSysConfigOthers, middlewares: [mw_root, mw_api, mw_api_manage] },
@@ -351,7 +353,7 @@ export default {
             waitUntil: ctx.waitUntil.bind(ctx),
             passThroughOnException: () => {},
             next: null,
-            data: {},
+            data: { serverRuntime: 'worker' },
         };
 
         return await maybeServeFromCache(request, ctx, () => executeChain(middlewares, handler, context));

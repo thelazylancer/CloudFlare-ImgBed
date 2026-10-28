@@ -8,7 +8,10 @@ const PAGE_SIZE = 3;
 const BACKFILL_PAGE_SIZE = 5;
 
 export async function deleteExpiredFile(env, fileId, url = null) {
-    return deleteFile(env, fileId, url ? `${url.origin}/file/${fileId}` : null, url, { expiredOnly: true });
+    const result = await deleteFile(env, fileId, url ? `${url.origin}/file/${fileId}` : null, url, { expiredOnly: true });
+    // Manage delete returns { deleted, existed }. Cleanup still needs a boolean:
+    // a failure object must not count as success.
+    return result === true || result?.deleted === true;
 }
 
 async function readStatus(db) {
