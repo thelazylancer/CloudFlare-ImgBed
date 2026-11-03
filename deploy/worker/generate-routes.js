@@ -445,7 +445,12 @@ export default {
             data: { serverRuntime: 'worker' },
         };
 
-        return await maybeServeFromCache(request, ctx, () => executeChain(middlewares, handler, context));
+        // 路由模块可导出 isCachedResponseServable，在返回 Worker 缓存前确认缓存仍然有效
+        const isCachedServable = typeof mod.isCachedResponseServable === 'function'
+            ? () => mod.isCachedResponseServable(context)
+            : null;
+
+        return await maybeServeFromCache(request, ctx, () => executeChain(middlewares, handler, context), isCachedServable);
     },
 };
 `;

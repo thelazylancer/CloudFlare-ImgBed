@@ -499,8 +499,9 @@ export class HuggingFaceAPI {
         });
 
         if (response.ok) return true;
-        // A previous cleanup attempt may have deleted the file before its DB write failed.
-        // Only EntryNotFound proves absence; a missing/private repository must remain retryable.
+        if (response.status === 404 && response.headers.get('X-Error-Code') === 'EntryNotFound') return true;
+        // 提交接口失败时再确认文件是否已经不存在。只有 EntryNotFound 算删除成功；
+        // 仓库或分支不存在仍要重试，避免把配置错误当成已删除。
         const existing = await fetch(this.getFileURL(filePath), {
             method: 'HEAD',
             headers: { 'Authorization': `Bearer ${this.token}` },
@@ -511,10 +512,11 @@ export class HuggingFaceAPI {
     /**
      * 获取文件内容（用于私有仓库代理）
      */
-    async getFileContent(filePath) {
-        const fileUrl = `${this.baseURL}/datasets/${this.repo}/resolve/main/${filePath}`;
+    async getFileContent(filePath, { signal } = {}) {
+        const fileUrl = `${this.baseURL}/datasets/${this.repo}/resolve/main/${filePath.split('/').map(encodeURIComponent).join('/')}`;
         return await fetch(fileUrl, {
-            headers: this.isPrivate ? { 'Authorization': `Bearer ${this.token}` } : {}
+            headers: this.isPrivate ? { 'Authorization': `Bearer ${this.token}` } : {},
+            signal
         });
     }
 

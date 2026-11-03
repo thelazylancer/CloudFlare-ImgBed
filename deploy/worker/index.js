@@ -47,6 +47,7 @@ import * as apiAuthResetAuth from '../../functions/api/auth/resetAuth.js';
 import * as apiAuthSessionCheck from '../../functions/api/auth/sessionCheck.js';
 import * as apiBingWallpaper_index from '../../functions/api/bing/wallpaper/index.js';
 import * as apiManageApiTokens from '../../functions/api/manage/apiTokens.js';
+import * as apiManageExpiry from '../../functions/api/manage/expiry.js';
 import * as apiManageList from '../../functions/api/manage/list.js';
 import * as apiManageQuota from '../../functions/api/manage/quota.js';
 import * as apiPublicList from '../../functions/api/public/list.js';
@@ -104,6 +105,7 @@ const routes = [
     { path: '/api/auth/sessionCheck', module: apiAuthSessionCheck, middlewares: [mw_root, mw_api] },
     { path: '/api/bing/wallpaper', module: apiBingWallpaper_index, middlewares: [mw_root, mw_api] },
     { path: '/api/manage/apiTokens', module: apiManageApiTokens, middlewares: [mw_root, mw_api, mw_api_manage] },
+    { path: '/api/manage/expiry', module: apiManageExpiry, middlewares: [mw_root, mw_api, mw_api_manage] },
     { path: '/api/manage/list', module: apiManageList, middlewares: [mw_root, mw_api, mw_api_manage] },
     { path: '/api/manage/quota', module: apiManageQuota, middlewares: [mw_root, mw_api, mw_api_manage] },
     { path: '/api/public/list', module: apiPublicList, middlewares: [mw_root, mw_api] },
@@ -356,6 +358,11 @@ export default {
             data: { serverRuntime: 'worker' },
         };
 
-        return await maybeServeFromCache(request, ctx, () => executeChain(middlewares, handler, context));
+        // 路由模块可导出 isCachedResponseServable，在返回 Worker 缓存前确认缓存仍然有效
+        const isCachedServable = typeof mod.isCachedResponseServable === 'function'
+            ? () => mod.isCachedResponseServable(context)
+            : null;
+
+        return await maybeServeFromCache(request, ctx, () => executeChain(middlewares, handler, context), isCachedServable);
     },
 };

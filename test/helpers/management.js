@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { loadFunction, memoryDatabase } from './loadFunction.js';
 import * as metadataSecurity from '../../functions/utils/metadata/metadataSecurity.js';
+import * as expiryHelpers from '../../functions/utils/fileExpiryHelpers.js';
+import { buildExpiryMarkerKey, getExpiresAt } from '../../functions/utils/fileExpiryHelpers.js';
 
 // Keep the route, metadata cleaning and index operations real. Only storage,
 // configuration access and cache invalidation are replaced at the boundary.
@@ -17,10 +19,11 @@ export async function managementFixture() {
         findConfiguredChannel: () => null,
     });
     const mocks = {
-        ...database, ...index, ...tools, ...metadataSecurity, ...view,
+        ...database, ...index, ...tools, ...metadataSecurity, ...view, ...expiryHelpers,
         purgeCFCache: async (env, url) => { purges.push(['file', url]); },
         purgeRandomFileListCache: async (...args) => { purges.push(['random', ...args]); },
         purgePublicFileListCache: async (...args) => { purges.push(['public', ...args]); },
+        maybeCleanupExpiredFiles: () => {},
     };
     const env = { img_r2: {
         async get(id) { return objects.has(id) ? { body: new Response(objects.get(id)).body } : null; },
@@ -31,6 +34,8 @@ export async function managementFixture() {
     async function seed(files) {
         for (const file of files) {
             await db.put(file.id, file.value ?? 'record-value', { metadata: file.metadata });
+            const expiresAt = getExpiresAt(file.metadata);
+            if (expiresAt !== null) await db.put(buildExpiryMarkerKey(expiresAt, file.id), '');
             if (file.metadata.Channel === 'CloudflareR2') objects.set(file.id, 'file-content');
         }
         await db.put('manage@index@meta', JSON.stringify({ chunkCount: 1, totalCount: files.length }));

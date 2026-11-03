@@ -1,7 +1,7 @@
 import { storeUploadedFile } from '../utils/fileRetention.js';
 import { createS3Client } from '../utils/storage/s3Client.js';
 /* ======= 客户端分块上传处理 ======= */
-import { createResponse, selectConsistentChannel, getUploadIp, getIPAddress, buildUniqueFileId, endUpload } from './uploadTools';
+import { createResponse, checkUploadFormat, selectConsistentChannel, getUploadIp, getIPAddress, buildUniqueFileId, endUpload } from './uploadTools';
 import { TelegramAPI } from '../utils/storage/telegramAPI';
 import { DiscordAPI } from '../utils/storage/discordAPI';
 import { CreateMultipartUploadCommand, UploadPartCommand, AbortMultipartUploadCommand } from "@aws-sdk/client-s3";
@@ -25,6 +25,9 @@ export async function initializeChunkedUpload(context) {
         if (typeof originalFileName !== 'string' || !originalFileName || typeof originalFileType !== 'string' || !originalFileType || !Number.isInteger(totalChunks) || totalChunks < 1) {
             return createResponse('Error: Missing initialization parameters', { status: 400 });
         }
+
+        const formatError = checkUploadFormat(originalFileName, context.uploadConfig);
+        if (formatError) return formatError;
 
         // 生成唯一的 uploadId
         const timestamp = Date.now();
@@ -124,6 +127,9 @@ export async function handleChunkUpload(context) {
             sessionInfo.totalChunks !== totalChunks) {
             return createResponse('Error: Session parameters mismatch', { status: 400 });
         }
+
+        const formatError = checkUploadFormat(sessionInfo.originalFileName, context.uploadConfig);
+        if (formatError) return formatError;
 
         // 检查会话是否过期
         if (Date.now() > sessionInfo.expiresAt) {
@@ -1284,6 +1290,9 @@ export async function uploadLargeFileToTelegram(context, file, fullId, metadata,
         const responseBody = [{ src: returnLink, expiresAt: metadata.ExpiresAt }];
         if (urlPrefix) {
             responseBody[0].publicUrl = `${urlPrefix.replace(/\/+$/, '')}/${fullId}`;
+        }
+        if (metadata.ExpiresAt) {
+            responseBody[0].expiresAt = metadata.ExpiresAt;
         }
 
         return createResponse(

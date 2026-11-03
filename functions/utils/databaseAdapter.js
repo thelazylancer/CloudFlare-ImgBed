@@ -47,7 +47,7 @@ class KVAdapter {
         if (!key.startsWith('manage@') && Number.isFinite(options.metadata?.ExpiresAt)) {
             const expiresAt = options.metadata.ExpiresAt;
             // Write the marker first: failed writes cannot leave a file with no expiry index.
-            // ponytail: stale markers are rechecked during cleanup, avoiding a read on every metadata update.
+            // Stale markers are rechecked during cleanup, avoiding a read on every metadata update.
             await this.kv.put(await retentionIndexKey(key, expiresAt), '', { metadata: { fileId: key, expiresAt } });
         }
         return await this.kv.put(key, value, options);
