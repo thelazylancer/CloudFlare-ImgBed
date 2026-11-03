@@ -34,9 +34,6 @@ main = "index.js"
 compatibility_date = "2024-08-21"
 compatibility_flags = ["global_fetch_strictly_public"]
 
-[triggers]
-crons = ["* * * * *"]
-
 [assets]
 directory = "../../frontend-dist"
 binding = "ASSETS"

@@ -1,4 +1,3 @@
-import { storeUploadedFile } from '../utils/fileRetention.js';
 import { createS3Client } from '../utils/storage/s3Client.js';
 /* ======= 客户端分块上传处理 ======= */
 import { createResponse, checkUploadFormat, selectConsistentChannel, getUploadIp, getIPAddress, buildUniqueFileId, endUpload } from './uploadTools';
@@ -16,13 +15,13 @@ export async function initializeChunkedUpload(context) {
 
     try {
         // 解析表单数据
-        const formdata = context.formdata || await request.formData();
+        const formdata = await request.formData();
 
         const originalFileName = formdata.get('originalFileName');
         const originalFileType = resolveFileType(originalFileName, formdata.get('originalFileType'));
-        const totalChunks = Number(formdata.get('totalChunks'));
+        const totalChunks = parseInt(formdata.get('totalChunks'));
 
-        if (typeof originalFileName !== 'string' || !originalFileName || typeof originalFileType !== 'string' || !originalFileType || !Number.isInteger(totalChunks) || totalChunks < 1) {
+        if (!originalFileName || !originalFileType || !totalChunks) {
             return createResponse('Error: Missing initialization parameters', { status: 400 });
         }
 
@@ -54,7 +53,6 @@ export async function initializeChunkedUpload(context) {
             totalChunks,
             uploadChannel,
             channelName,
-            retention: context.retention,
             uploadIp,
             ipAddress,
             status: 'initialized',
@@ -95,21 +93,18 @@ export async function handleChunkUpload(context) {
     const db = getDatabase(env);
 
     // 解析表单数据
-    const formdata = context.formdata || await request.formData();
+    const formdata = await request.formData();
     context.formdata = formdata;
 
     try {
         const chunk = formdata.get('file');
-        const chunkIndexValue = formdata.get('chunkIndex');
-        const chunkIndex = typeof chunkIndexValue === 'string' && chunkIndexValue.trim() ? Number(chunkIndexValue) : NaN;
-        const totalChunks = Number(formdata.get('totalChunks'));
+        const chunkIndex = parseInt(formdata.get('chunkIndex'));
+        const totalChunks = parseInt(formdata.get('totalChunks'));
         const uploadId = formdata.get('uploadId');
         const originalFileName = formdata.get('originalFileName');
         const originalFileType = resolveFileType(originalFileName, formdata.get('originalFileType'));
 
-        if (!chunk || typeof chunk === 'string' || !Number.isInteger(chunkIndex) || chunkIndex < 0 ||
-            !Number.isInteger(totalChunks) || chunkIndex >= totalChunks ||
-            ![uploadId, originalFileName, originalFileType].every(value => typeof value === 'string' && value)) {
+        if (!chunk || chunkIndex === null || !totalChunks || !uploadId || !originalFileName || !originalFileType) {
             return createResponse('Error: Missing chunk upload parameters', { status: 400 });
         }
 
@@ -633,9 +628,6 @@ async function uploadSingleChunkToTelegram(context, chunkData, chunkIndex, total
         return {
             success: true,
             fileId: chunkInfo.file_id,
-            messageId: chunkInfo.message_id,
-            chatId: chunkInfo.chat_id,
-            messageDate: chunkInfo.message_date,
             size: chunkInfo.file_size,
             fileName: chunkFileName,
             uploadTime: Date.now(),
@@ -1246,9 +1238,6 @@ export async function uploadLargeFileToTelegram(context, file, fullId, metadata,
             chunks.push({
                 index: i,
                 fileId: chunkInfo.file_id,
-                messageId: chunkInfo.message_id,
-                chatId: chunkInfo.chat_id,
-                messageDate: chunkInfo.message_date,
                 size: chunkInfo.file_size,
                 fileName: chunkFileName
             });
@@ -1278,7 +1267,7 @@ export async function uploadLargeFileToTelegram(context, file, fullId, metadata,
         }
 
         // 写入最终的数据库记录，分片信息作为value
-        await storeUploadedFile(context, fullId, chunksData, metadata);
+        await db.put(fullId, chunksData, { metadata });
 
         // 异步结束上传
         waitUntil(endUpload(context, fullId, metadata));
@@ -1287,7 +1276,7 @@ export async function uploadLargeFileToTelegram(context, file, fullId, metadata,
         const pageConfig = await fetchPageConfig(env);
         const urlPrefixConfig = pageConfig.config?.find(c => c.id === 'urlPrefix');
         const urlPrefix = urlPrefixConfig?.value || '';
-        const responseBody = [{ src: returnLink, expiresAt: metadata.ExpiresAt }];
+        const responseBody = [{ 'src': returnLink }];
         if (urlPrefix) {
             responseBody[0].publicUrl = `${urlPrefix.replace(/\/+$/, '')}/${fullId}`;
         }

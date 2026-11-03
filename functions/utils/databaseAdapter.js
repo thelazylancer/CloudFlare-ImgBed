@@ -4,14 +4,7 @@
  */
 
 import { D1Database } from './d1Database.js';
-
-export const RETENTION_INDEX_PREFIX = 'manage@retention@expires@';
-
-export async function retentionIndexKey(fileId, expiresAt) {
-    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(fileId)));
-    const hash = Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
-    return `${RETENTION_INDEX_PREFIX}${String(Math.ceil(expiresAt)).padStart(16, '0')}@${hash}`;
-}
+import { getExpiresAt, buildExpiryMarkerKey } from './fileExpiryHelpers.js';
 
 /**
  * 创建数据库适配器
@@ -20,12 +13,12 @@ export async function retentionIndexKey(fileId, expiresAt) {
  */
 export function createDatabaseAdapter(env) {
     // 检查是否配置了数据库
-    if (env.img_d1 && typeof env.img_d1.prepare === 'function') {
-        // 使用D1数据库
-        return new D1Database(env.img_d1);
-    } else if (env.img_url && typeof env.img_url.get === 'function') {
+    if (env.img_url && typeof env.img_url.get === 'function') {
         // 使用KV存储
         return new KVAdapter(env.img_url);
+    } else if (env.img_d1 && typeof env.img_d1.prepare === 'function') {
+        // 使用D1数据库
+        return new D1Database(env.img_d1);
     } else {
         console.error('No database configured. Please configure either KV (env.img_url) or D1 (env.img_d1).');
         return null;
@@ -44,11 +37,11 @@ class KVAdapter {
     // 直接代理到KV的方法
     async put(key, value, options) {
         options = options || {};
-        if (!key.startsWith('manage@') && Number.isFinite(options.metadata?.ExpiresAt)) {
-            const expiresAt = options.metadata.ExpiresAt;
-            // Write the marker first: failed writes cannot leave a file with no expiry index.
-            // Stale markers are rechecked during cleanup, avoiding a read on every metadata update.
-            await this.kv.put(await retentionIndexKey(key, expiresAt), '', { metadata: { fileId: key, expiresAt } });
+        // 有效期文件记录先写到期标记再写记录：标记写入失败时记录不会写入，不会出现清理任务找不到的文件；
+        // 记录写入失败留下的标记，清理时发现记录不存在会删除。所有写入记录的路径（上传、修改、移动、恢复）都经过这里
+        const expiresAt = key.startsWith('manage@') ? null : getExpiresAt(options.metadata);
+        if (expiresAt !== null) {
+            await this.kv.put(buildExpiryMarkerKey(expiresAt, key), '');
         }
         return await this.kv.put(key, value, options);
     }

@@ -283,26 +283,6 @@ D1Database.prototype.listSettings = function(options) {
     });
 };
 
-D1Database.prototype.listExpiredFiles = async function(now, limit, cursor = '') {
-    const expiry = "json_extract(metadata, '$.ExpiresAt')";
-    let query = `SELECT id, metadata FROM files WHERE json_type(metadata, '$.ExpiresAt') IN ('integer', 'real') AND ${expiry} <= ?`;
-    const params = [now];
-    if (cursor) {
-        const [expiresAt, id] = JSON.parse(cursor);
-        query += ` AND (${expiry} > ? OR (${expiry} = ? AND id > ?))`;
-        params.push(expiresAt, expiresAt, id);
-    }
-    query += ` ORDER BY ${expiry}, id LIMIT ?`;
-    params.push(limit + 1);
-    const response = await this.db.prepare(query).bind(...params).all();
-    const rows = response.results || [];
-    const hasMore = rows.length > limit;
-    if (hasMore) rows.pop();
-    const keys = rows.map(row => ({ name: row.id, metadata: JSON.parse(row.metadata) }));
-    const last = keys.at(-1);
-    return { keys, list_complete: !hasMore, cursor: hasMore ? JSON.stringify([last.metadata.ExpiresAt, last.name]) : '' };
-};
-
 // ==================== 索引操作 ====================
 
 /**

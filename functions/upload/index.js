@@ -1,4 +1,3 @@
-import { storeUploadedFile, getUploadRetention, retentionErrorResponse } from '../utils/fileRetention.js';
 import { createS3Client } from '../utils/storage/s3Client.js';
 import { userAuthCheck, UnauthorizedResponse } from "../utils/auth/userAuth";
 import { fetchUploadConfig, fetchSecurityConfig, fetchPageConfig } from "../utils/sysConfig";
@@ -55,18 +54,6 @@ export async function onRequest(context) {  // Contents of context object
         return await handleCleanupRequest(context, uploadId, totalChunks);
     }
 
-    try {
-        context.retention = await getUploadRetention(context);
-    } catch (error) {
-        return retentionErrorResponse(error);
-    }
-
-    try {
-        context.formdata = await request.formData();
-    } catch {
-        return createResponse('Error: Expected multipart form data', { status: 400 });
-    }
-
     // 检查是否为初始化分块上传请求
     const initChunked = url.searchParams.get('initChunked') === 'true';
     if (initChunked) {
@@ -100,15 +87,7 @@ async function processFileUpload(context, formdata = null) {
     const { request, url } = context;
 
     // 解析表单数据
-    try {
-        formdata = formdata || context.formdata || await request.formData();
-    } catch {
-        return createResponse('Error: Expected multipart form data', { status: 400 });
-    }
-    const file = formdata.get('file');
-    if (!file || typeof file === 'string' || typeof file.name !== 'string') {
-        return createResponse('Error: A file is required in the file field', { status: 400 });
-    }
+    formdata = formdata || await request.formData();
 
     // 将 formdata 存储在 context 中
     context.formdata = formdata;
@@ -161,6 +140,7 @@ async function processFileUpload(context, formdata = null) {
 
     // 获取文件信息
     const time = new Date().getTime();
+    const file = formdata.get('file');
     let fileName = file.name;
     const formatError = checkUploadFormat(fileName, context.uploadConfig);
     if (formatError) return formatError;
@@ -258,7 +238,7 @@ async function processFileUpload(context, formdata = null) {
     if (uploadChannel === 'CloudflareR2') {
         // -------------CloudFlare R2 渠道---------------
         const res = await uploadFileToCloudflareR2(context, fullId, metadata, returnLink);
-        if (res.status === 200 || !autoRetry || context.uploadPersistenceFailed || context.uploadRollbackFailed) {
+        if (res.status === 200 || !autoRetry) {
             return res;
         } else {
             err = await res.text();
@@ -266,7 +246,7 @@ async function processFileUpload(context, formdata = null) {
     } else if (uploadChannel === 'S3') {
         // ---------------------S3 渠道------------------
         const res = await uploadFileToS3(context, fullId, metadata, returnLink);
-        if (res.status === 200 || !autoRetry || context.uploadPersistenceFailed || context.uploadRollbackFailed) {
+        if (res.status === 200 || !autoRetry) {
             return res;
         } else {
             err = await res.text();
@@ -274,7 +254,7 @@ async function processFileUpload(context, formdata = null) {
     } else if (uploadChannel === 'Discord') {
         // ---------------------Discord 渠道------------------
         const res = await uploadFileToDiscord(context, fullId, metadata, returnLink);
-        if (res.status === 200 || !autoRetry || context.uploadPersistenceFailed || context.uploadRollbackFailed) {
+        if (res.status === 200 || !autoRetry) {
             return res;
         } else {
             err = await res.text();
@@ -282,7 +262,7 @@ async function processFileUpload(context, formdata = null) {
     } else if (uploadChannel === 'HuggingFace') {
         // ---------------------HuggingFace 渠道------------------
         const res = await uploadFileToHuggingFace(context, fullId, metadata, returnLink);
-        if (res.status === 200 || !autoRetry || context.uploadPersistenceFailed || context.uploadRollbackFailed) {
+        if (res.status === 200 || !autoRetry) {
             return res;
         } else {
             err = await res.text();
@@ -290,7 +270,7 @@ async function processFileUpload(context, formdata = null) {
     } else if (uploadChannel === 'WebDAV') {
         // ---------------------WebDAV 渠道------------------
         const res = await uploadFileToWebDAV(context, fullId, metadata, returnLink);
-        if (res.status === 200 || !autoRetry || context.uploadPersistenceFailed || context.uploadRollbackFailed) {
+        if (res.status === 200 || !autoRetry) {
             return res;
         } else {
             err = await res.text();
@@ -302,7 +282,7 @@ async function processFileUpload(context, formdata = null) {
     } else {
         // ----------------Telegram New 渠道-------------------
         const res = await uploadFileToTelegram(context, fullId, metadata, fileExt, fileName, fileType, returnLink);
-        if (res.status === 200 || !autoRetry || context.uploadPersistenceFailed || context.uploadRollbackFailed) {
+        if (res.status === 200 || !autoRetry) {
             return res;
         } else {
             err = await res.text();
@@ -316,7 +296,7 @@ async function processFileUpload(context, formdata = null) {
 
 // 构建上传成功响应，自动附带 publicUrl（如果已配置）
 function buildUploadResponse(context, returnLink) {
-    const result = { src: returnLink, expiresAt: context.fileExpiresAt };
+    const result = { src: returnLink };
     if (context.publicUrl) {
         result.publicUrl = context.publicUrl;
     }
@@ -369,7 +349,9 @@ async function uploadFileToCloudflareR2(context, fullId, metadata, returnLink) {
 
     // 写入数据库
     try {
-        await storeUploadedFile(context, fullId, "", metadata);
+        await db.put(fullId, "", {
+            metadata: metadata,
+        });
     } catch (error) {
         return createResponse('Error: Failed to write to database', { status: 500 });
     }
@@ -442,7 +424,7 @@ async function uploadFileToS3(context, fullId, metadata, returnLink) {
         // 图像审查
         if (uploadModerate && uploadModerate.enabled) {
             try {
-                await storeUploadedFile(context, fullId, "", metadata);
+                await db.put(fullId, "", { metadata });
             } catch {
                 return createResponse("Error: Failed to write to KV database", { status: 500 });
             }
@@ -454,7 +436,7 @@ async function uploadFileToS3(context, fullId, metadata, returnLink) {
 
         // 写入数据库
         try {
-            await storeUploadedFile(context, fullId, "", metadata);
+            await db.put(fullId, "", { metadata });
         } catch {
             return createResponse("Error: Failed to write to database", { status: 500 });
         }
@@ -545,27 +527,17 @@ async function uploadFileToTelegram(context, fullId, metadata, fileExt, fileName
     }
 
     // 上传文件到 Telegram
-    let sentMessage;
-    let persisted = false;
+    let res = createResponse('upload error, check your environment params about telegram channel!', { status: 400 });
     try {
         const response = await telegramAPI.sendFile(formdata.get('file'), tgChatId, sendFunction.url, sendFunction.type);
-        sentMessage = response.result;
         const fileInfo = telegramAPI.getFileInfo(response);
-        if (!fileInfo) throw new Error('Telegram returned no file');
         const filePath = await telegramAPI.getFilePath(fileInfo.file_id);
-        if (!filePath) throw new Error('Telegram returned no file path');
         const id = fileInfo.file_id;
-        // Telegram sendPhoto always stores a JPEG rendition, even when the
-        // uploaded source was PNG. Keep the response MIME type aligned with
-        // the bytes fetched from Telegram so browsers can render the image.
-        if (sendFunction.url === 'sendPhoto') {
-            metadata.FileType = 'image/jpeg';
-            metadata.FileName = metadata.FileName.replace(/\.[^.]+$/, '.jpg');
-        }
         // 更新FileSize
         metadata.FileSize = (fileInfo.file_size / 1024 / 1024).toFixed(2);
 
         // 将响应返回给客户端
+        res = buildUploadResponse(context, returnLink);
 
 
         // 图像审查（使用代理域名或官方域名）
@@ -574,32 +546,26 @@ async function uploadFileToTelegram(context, fullId, metadata, fileExt, fileName
         metadata.Label = await moderateContent(env, moderateUrl);
 
         // 更新metadata，写入KV数据库
-        metadata.Channel = "TelegramNew";
-        metadata.ChannelName = tgChannel.name;
-        metadata.TgFileId = id;
-        metadata.TgMessageId = fileInfo.message_id;
-        metadata.TgMessageChatId = fileInfo.chat_id;
-        metadata.TgMessageDate = fileInfo.message_date;
-        await storeUploadedFile(context, fullId, "", metadata);
-        persisted = true;
+        try {
+            metadata.Channel = "TelegramNew";
+            metadata.ChannelName = tgChannel.name;
+
+            metadata.TgFileId = id;
+            await db.put(fullId, "", {
+                metadata: metadata,
+            });
+        } catch (error) {
+            res = createResponse('Error: Failed to write to KV database', { status: 500 });
+        }
 
         // 结束上传
         waitUntil(endUpload(context, fullId, metadata));
-        return buildUploadResponse(context, returnLink);
+
     } catch (error) {
-        if (!persisted && sentMessage?.message_id) {
-            try {
-                await telegramAPI.deleteMessage(sentMessage.chat?.id || tgChatId, sentMessage.message_id);
-            } catch {
-                // Stop automatic retries when the original media could not be rolled back.
-                context.uploadRollbackFailed = true;
-                console.error('Telegram upload rollback failed; message ID:', sentMessage.message_id);
-            }
-        }
-        console.error('Telegram upload failed; persistence:', Boolean(context.uploadPersistenceFailed));
-        return createResponse(context.uploadPersistenceFailed
-            ? 'Error: Failed to persist upload; Telegram rollback was attempted'
-            : 'Error: Telegram upload failed', { status: context.uploadPersistenceFailed ? 500 : 502 });
+        console.log('Telegram upload error:', error.message);
+        res = createResponse('upload error, check your environment params about telegram channel!', { status: 400 });
+    } finally {
+        return res;
     }
 }
 
@@ -620,7 +586,9 @@ async function uploadFileToExternal(context, fullId, metadata, returnLink) {
     metadata.ExternalLink = extUrl;
     // 写入KV数据库
     try {
-        await storeUploadedFile(context, fullId, "", metadata);
+        await db.put(fullId, "", {
+            metadata: metadata,
+        });
     } catch (error) {
         return createResponse('Error: Failed to write to KV database', { status: 500 });
     }
@@ -700,7 +668,7 @@ async function uploadFileToDiscord(context, fullId, metadata, returnLink) {
 
         // 写入 KV 数据库
         try {
-            await storeUploadedFile(context, fullId, "", metadata);
+            await db.put(fullId, "", { metadata });
         } catch (error) {
             return createResponse('Error: Failed to write to KV database', { status: 500 });
         }
@@ -801,7 +769,7 @@ async function uploadFileToHuggingFace(context, fullId, metadata, returnLink) {
             } else {
                 // 私有仓库：先写入KV，再通过自己的域名访问进行审查
                 try {
-                    await storeUploadedFile(context, fullId, "", metadata);
+                    await db.put(fullId, "", { metadata });
                 } catch (error) {
                     return createResponse('Error: Failed to write to KV database', { status: 500 });
                 }
@@ -814,7 +782,7 @@ async function uploadFileToHuggingFace(context, fullId, metadata, returnLink) {
 
         // 写入 KV 数据库
         try {
-            await storeUploadedFile(context, fullId, "", metadata);
+            await db.put(fullId, "", { metadata });
         } catch (error) {
             return createResponse('Error: Failed to write to KV database', { status: 500 });
         }
@@ -879,7 +847,7 @@ async function uploadFileToWebDAV(context, fullId, metadata, returnLink) {
                 metadata.Label = await moderateContent(env, webdavPublicUrl);
             } else {
                 try {
-                    await storeUploadedFile(context, fullId, "", metadata);
+                    await db.put(fullId, "", { metadata });
                 } catch {
                     return createResponse('Error: Failed to write to database', { status: 500 });
                 }
@@ -891,7 +859,7 @@ async function uploadFileToWebDAV(context, fullId, metadata, returnLink) {
         }
 
         try {
-            await storeUploadedFile(context, fullId, "", metadata);
+            await db.put(fullId, "", { metadata });
         } catch {
             return createResponse('Error: Failed to write to database', { status: 500 });
         }
@@ -933,7 +901,7 @@ async function tryRetry(err, context, uploadChannel, fullId, metadata, fileExt, 
     }
 
     // 原渠道重试成功，直接返回
-    if (retryRes && (retryRes.status === 200 || context.uploadPersistenceFailed || context.uploadRollbackFailed)) {
+    if (retryRes && retryRes.status === 200) {
         return retryRes;
     } else if (retryRes) {
         errMessages[uploadChannel + '_retry'] = 'Error: ' + uploadChannel + ' retry - ' + await retryRes.text();
@@ -957,7 +925,7 @@ async function tryRetry(err, context, uploadChannel, fullId, metadata, fileExt, 
                 res = await uploadFileToDiscord(context, fullId, metadata, returnLink);
             }
 
-            if (res && (res.status === 200 || context.uploadPersistenceFailed || context.uploadRollbackFailed)) {
+            if (res && res.status === 200) {
                 return res;
             } else if (res) {
                 errMessages[channelList[i]] = 'Error: ' + channelList[i] + await res.text();

@@ -498,15 +498,9 @@ export class HuggingFaceAPI {
             body
         });
 
-        if (response.ok) return true;
-        if (response.status === 404 && response.headers.get('X-Error-Code') === 'EntryNotFound') return true;
-        // 提交接口失败时再确认文件是否已经不存在。只有 EntryNotFound 算删除成功；
-        // 仓库或分支不存在仍要重试，避免把配置错误当成已删除。
-        const existing = await fetch(this.getFileURL(filePath), {
-            method: 'HEAD',
-            headers: { 'Authorization': `Bearer ${this.token}` },
-        });
-        return existing.status === 404 && existing.headers.get('X-Error-Code') === 'EntryNotFound';
+        // 只有 EntryNotFound 表示文件已不存在，删除的目的已经达到（与 WebDAV 删除一致）；
+        // 仓库或分支不存在（RepoNotFound、RevisionNotFound）等其他 404 仍按失败处理
+        return response.ok || (response.status === 404 && response.headers.get('X-Error-Code') === 'EntryNotFound');
     }
 
     /**

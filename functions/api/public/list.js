@@ -1,4 +1,3 @@
-import { isFileExpired } from '../../utils/fileRetention.js';
 /**
  * 公开文件列表 API
  * 负责按公开浏览配置返回可访问文件和目录列表，并维护列表缓存
@@ -94,7 +93,6 @@ async function getPublicFileList(context, url, dir, recursive) {
             FileType: file.metadata?.FileType,
             TimeStamp: file.metadata?.TimeStamp,
             FileSize: file.metadata?.FileSize,
-            ExpiresAt: file.metadata?.ExpiresAt,
         }
     }));
 
@@ -206,7 +204,7 @@ export async function onRequest(context) {
         const isVideoFile = (name) => videoExts.includes(getFileExt(name));
         const isAudioFile = (name) => audioExts.includes(getFileExt(name));
 
-        let filteredFiles = cachedData.files.filter(file => !isFileExpired(file.metadata));
+        let filteredFiles = cachedData.files;
 
         // 搜索过滤
         if (search) {
@@ -243,7 +241,7 @@ export async function onRequest(context) {
         return new Response(JSON.stringify({
             files: safeFiles,
             directories: filteredDirectories,
-            totalCount: filteredTotalCount,
+            totalCount: (search || fileType) ? filteredTotalCount : cachedData.totalCount,
             returnedCount: safeFiles.length,
             allowedDirs: allowedDirs, // 返回允许的目录列表供前端使用
             fromCache: cachedData.fromCache,

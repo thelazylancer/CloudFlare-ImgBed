@@ -1,6 +1,5 @@
 import { validateAnySession } from "../../utils/auth/sessionManager.js";
 import { fetchSecurityConfig } from "../../utils/sysConfig.js";
-import { canStorePermanently, DEFAULT_RETENTION_SECONDS, MAX_RETENTION_SECONDS } from '../../utils/fileRetention.js';
 
 /**
  * 会话检查接口
@@ -27,11 +26,6 @@ export async function onRequestGet(context) {
 
     const adminRequired = !!(adminUsername && adminUsername.trim()) || !!(adminPassword && adminPassword.trim());
     const userRequired = !!(userAuthCode && userAuthCode.trim());
-    const retentionPolicy = {
-        canStorePermanently: await canStorePermanently(env, request, securityConfig),
-        defaultRetentionSeconds: DEFAULT_RETENTION_SECONDS,
-        maxRetentionSeconds: MAX_RETENTION_SECONDS,
-    };
 
     // 检查会话
     const sessionResult = await validateAnySession(env, request);
@@ -41,10 +35,9 @@ export async function onRequestGet(context) {
             authType: sessionResult.session.authType,
             adminRequired,
             userRequired,
-            ...retentionPolicy,
         }), {
             status: 200,
-            headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+            headers: { 'Content-Type': 'application/json' },
         });
     }
 
@@ -52,9 +45,8 @@ export async function onRequestGet(context) {
         valid: false,
         adminRequired,
         userRequired,
-        ...retentionPolicy,
     }), {
         status: 200, // 不再返回 401，让前端根据字段判断
-        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+        headers: { 'Content-Type': 'application/json' },
     });
 }

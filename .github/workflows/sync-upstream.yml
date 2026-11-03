@@ -45,53 +45,40 @@ jobs:
       - name: Sync upstream changes
         id: sync
         if: steps.breaking_guard.outputs.blocked != 'true'
-        run: bash .github/workflows/scripts/merge-upstream.sh refs/remotes/cloudflare-imgbed-upstream/main
-
-      - name: Set up Node.js
-        if: steps.sync.outcome == 'success'
-        uses: actions/setup-node@v5
+        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
         with:
-          node-version: '22'
-          cache: npm
-
-      - name: Install dependencies
-        if: steps.sync.outcome == 'success'
-        run: npm ci --include=dev
-
-      - name: Validate merged changes
-        if: steps.sync.outcome == 'success'
-        run: |
-          npm run check
-          npx wrangler deploy --dry-run --config deploy/cleanup/wrangler.toml
-
-      - name: Push validated changes
-        id: push
-        if: steps.sync.outcome == 'success'
-        run: git push origin HEAD:main
+          upstream_sync_repo: MarSeventh/CloudFlare-ImgBed
+          upstream_sync_branch: main
+          target_sync_branch: main
+          target_repo_token: ${{ secrets.GITHUB_TOKEN }}
+          test_mode: false
 
       - name: Complete breaking update notices
-        if: steps.push.outcome == 'success'
+        if: steps.sync.outcome == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash .github/breaking-updates/scripts/breaking-update-guard.sh complete
 
       - name: Trigger Worker deploy
-        if: steps.push.outcome == 'success'
+        if: steps.sync.outcome == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh workflow run deploy-worker.yml --repo "${{ github.repository }}" --ref main
 
       - name: Sync failure guidance
-        if: failure() && steps.breaking_guard.outputs.blocked != 'true'
+        if: failure() && steps.sync.outcome == 'failure'
         run: |
           {
             echo "## ⚠️ 上游同步未完成 / Upstream synchronization did not complete"
             echo
-            echo "请查看失败步骤：Sync upstream changes 失败且日志里仍有源码 CONFLICT，表示上游与本 Fork 的定制功能存在合并冲突。frontend-dist 的构建产物冲突会自动保留本 Fork 版本。Validate merged changes 失败表示合并后检查未通过；Push validated changes 失败则需检查推送权限或分支是否已更新。"
+            echo "上游同步步骤未能完成。若上游近期修改了 workflow 文件，GitHub 可能会暂停包含 workflow 变更的自动同步；也可能是当前 Fork 的 Actions 权限或同步权限发生了变化。"
             echo
-            echo "Check the failed step: a source CONFLICT means upstream changes overlap this fork's customizations. frontend-dist asset conflicts are kept from this fork automatically. Validation failures require fixing the merged code; push failures require checking permissions or concurrent branch updates."
+            echo "The upstream synchronization step could not be completed. If the upstream workflow files changed recently, GitHub may pause automatic synchronization that includes workflow changes. The issue may also be related to Actions or synchronization permissions in this fork."
             echo
-            echo "源码冲突请在本地解决并运行 npm run check 后推送，再重新运行本工作流。保留文件期限、清理任务和域名跳转等定制功能，避免用上游版本直接覆盖。"
+            echo "建议先在 GitHub 页面手动执行一次 **Sync fork**，确认 Actions 具有读写权限后，再重新运行本工作流。"
             echo
-            echo "Resolve source conflicts locally, preserve retention, cleanup and domain customizations, run npm run check, push, and rerun this workflow."
+            echo "Please manually use **Sync fork** on GitHub, confirm that Actions has read and write permissions, and then rerun this workflow."
           } >> "$GITHUB_STEP_SUMMARY"
+          echo "[Error] 上游同步未能完成。若上游近期修改了 workflow 文件，请先在 GitHub 页面手动执行一次 Sync Fork，然后重新运行本工作流。"
+          echo "[Error] The upstream sync could not be completed. If the upstream workflow files changed recently, manually run Sync Fork on GitHub and then rerun this workflow."
+          exit 1

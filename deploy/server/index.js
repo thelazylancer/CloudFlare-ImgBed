@@ -14,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { SqliteD1 } from './sqliteD1.js';
 import { LocalR2Storage } from './r2Storage.js';
 import { dockerImageProcessor } from './imageProcessor.js';
-import { cleanupExpiredFiles } from '../../functions/utils/retentionCleanup.js';
+import { startExpiryCleanupTimer } from './expiryCleanup.js';
 
 const NativeResponse = globalThis.Response;
 
@@ -126,19 +126,6 @@ function createEnv() {
         IMAGE_PROCESSOR: dockerImageProcessor,
     };
 }
-
-let cleanupRunning = false;
-setInterval(async () => {
-    if (cleanupRunning) return;
-    cleanupRunning = true;
-    try {
-        await cleanupExpiredFiles(createEnv());
-    } catch (error) {
-        console.error('Expired file cleanup failed:', error.message);
-    } finally {
-        cleanupRunning = false;
-    }
-}, 60000).unref();
 
 // ==================== Functions 路由解析 ====================
 
@@ -431,3 +418,11 @@ serve({
     console.log(`Mode: Docker (Native Node.js)`);
 });
 
+// ==================== 文件有效期清理 ====================
+
+const { runExpiryCleanupJob } = await import(pathToFileURL(join(FUNCTIONS_DIR, 'utils', 'fileExpiryService.js')).href);
+startExpiryCleanupTimer({
+    runExpiryCleanupJob,
+    createEnv,
+    intervalMinutes: Number(process.env.EXPIRY_CLEANUP_INTERVAL_MINUTES ?? 10),
+});

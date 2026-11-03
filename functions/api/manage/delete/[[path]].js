@@ -7,14 +7,11 @@ import { buildExpiryMarkerKey, getExpiresAt, isMissingRecord } from '../../../ut
 import { DiscordAPI } from '../../../utils/storage/discordAPI.js';
 import { HuggingFaceAPI } from '../../../utils/storage/huggingfaceAPI.js';
 import { WebDAVAPI } from '../../../utils/storage/webdavAPI.js';
-import { TelegramAPI } from '../../../utils/storage/telegramAPI.js';
-import { isFileExpired } from '../../../utils/fileRetention.js';
 import {
     resolveDiscordCredentials,
     resolveHuggingFaceCredentials,
     resolveS3Credentials,
     resolveWebDAVCredentials,
-    resolveTelegramCredentials,
 } from '../../../utils/metadata/channelCredentials.js';
 
 // CORS 跨域响应头
@@ -178,51 +175,20 @@ export async function deleteStoredFile(env, fileId, img) {
 }
 
 // 删除单个文件的核心函数
-export async function deleteFile(env, fileId, cdnUrl, url, { expiredOnly = false } = {}) {
+export async function deleteFile(env, fileId, cdnUrl, url) {
     try {
         // 读取图片信息
         const db = getDatabase(env);
         const img = await db.getWithMetadata(fileId);
 
         // 如果文件记录不存在，直接返回成功（幂等删除），标记 existed=false 供调用方区分
-        if (!img || (img.value === null && !img.metadata)) {
+        if (isMissingRecord(img)) {
             console.warn(`File ${fileId} not found in database, skipping delete`);
             return { deleted: true, existed: false };
         }
-        // Recheck the current record: a stale cleanup listing must not delete a renewed file.
-        if (expiredOnly && !isFileExpired(img.metadata)) return true;
 
-        // 如果是R2渠道的图片，需要删除R2中对应的图片
-        if (img.metadata?.Channel === 'CloudflareR2') {
-            const R2DataBase = env.img_r2;
-            await R2DataBase.delete(fileId);
-        }
-
-        // S3 渠道的图片，需要删除S3中对应的图片
-        if (img.metadata?.Channel === 'S3') {
-            if (!await deleteS3File(env, img)) return false;
-        }
-
-        // Discord 渠道的图片，需要删除 Discord 中对应的消息
-        if (img.metadata?.Channel === 'Discord') {
-            if (!await deleteDiscordFile(env, img)) return false;
-        }
-
-        // HuggingFace 渠道的图片，需要删除 HuggingFace 中对应的文件
-        if (img.metadata?.Channel === 'HuggingFace') {
-            if (!await deleteHuggingFaceFile(env, img)) return false;
-        }
-
-        // WebDAV 渠道的图片，需要删除 WebDAV 中对应的文件
-        if (img.metadata?.Channel === 'WebDAV') {
-            if (!await deleteWebDAVFile(env, img)) return false;
-        }
-        if (img.metadata?.Channel === 'TelegramNew') {
-            if (!await deleteTelegramFile(env, img)) return false;
-        }
-        if (expiredOnly) {
-            const indexResult = await removeFileFromIndex({ env }, fileId);
-            if (!indexResult.success) return false;
+        if (!await deleteStoredFile(env, fileId, img)) {
+            throw new Error('storage channel reported a failed deletion');
         }
 
         // 删除数据库中的记录
@@ -240,46 +206,18 @@ export async function deleteFile(env, fileId, cdnUrl, url, { expiredOnly = false
         }
 
         // 清除CDN缓存
-        if (cdnUrl) await purgeCFCache(env, cdnUrl);
+        await purgeCFCache(env, cdnUrl);
 
         // 清除 api/randomFileList 等API缓存
         const normalizedFolder = fileId.split('/').slice(0, -1).join('/');
-        if (url) {
-            await purgeRandomFileListCache(url.origin, normalizedFolder);
-            await purgePublicFileListCache(url.origin, normalizedFolder);
-        }
+        await purgeRandomFileListCache(url.origin, normalizedFolder);
+        await purgePublicFileListCache(url.origin, normalizedFolder);
 
         return { deleted: true, existed: true };
     } catch (e) {
         console.error('Delete file failed:', e);
         return { deleted: false, existed: true };
     }
-}
-
-async function deleteTelegramFile(env, img) {
-    const metadata = img.metadata;
-    // Older uploads did not retain message IDs; preserve their existing deletion behavior.
-    if (!Object.hasOwn(metadata, 'ExpiresAt') && !metadata.TgMessageId) return true;
-    const messages = metadata.IsChunked ? JSON.parse(img.value) : [{
-        messageId: metadata.TgMessageId,
-        chatId: metadata.TgMessageChatId,
-        messageDate: metadata.TgMessageDate,
-    }];
-    const db = getDatabase(env);
-    for (const message of messages) {
-        if (!message.messageId || !message.chatId || !message.messageDate) return false;
-        // Bot API cannot delete messages >=48h old. Native chat auto-delete handles those.
-        if (Date.now() - message.messageDate * 1000 >= 48 * 3600000) {
-            console.warn('Expired Telegram message exceeds the Bot API deletion window; use chat auto-delete');
-            continue;
-        }
-        const credentials = await resolveTelegramCredentials(db, env, {
-            ...metadata, ChannelName: message.channelName || metadata.ChannelName,
-        });
-        if (!credentials.botToken) return false;
-        await new TelegramAPI(credentials.botToken, credentials.proxyUrl).deleteMessage(message.chatId, message.messageId);
-    }
-    return true;
 }
 
 // 删除 S3 渠道的图片
@@ -306,16 +244,27 @@ async function deleteS3File(env, img) {
 // 删除 Discord 渠道的图片（删除 Discord 消息）
 async function deleteDiscordFile(env, img) {
     const db = getDatabase(env);
-    const messages = img.metadata?.IsChunked ? JSON.parse(img.value) : [{ messageId: img.metadata?.DiscordMessageId }];
-    for (const message of messages) {
-        const credentials = await resolveDiscordCredentials(db, env, {
-            ...img.metadata, ChannelName: message.channelName || img.metadata?.ChannelName,
-        });
-        if (!credentials.botToken || !credentials.channelId || !message.messageId) return false;
-        const api = new DiscordAPI(credentials.botToken);
-        if (!await api.deleteMessage(credentials.channelId, message.messageId)) return false;
+    const discordCredentials = await resolveDiscordCredentials(db, env, img.metadata);
+    const botToken = discordCredentials.botToken;
+    const channelId = discordCredentials.channelId;
+    const messageId = discordCredentials.messageId;
+
+    if (!botToken || !channelId || !messageId) {
+        console.warn('Discord file missing required metadata for deletion');
+        return false;
     }
-    return true;
+
+    try {
+        const discordAPI = new DiscordAPI(botToken);
+        const success = await discordAPI.deleteMessage(channelId, messageId);
+        if (!success) {
+            console.error('Discord Delete Failed: API returned false');
+        }
+        return success;
+    } catch (error) {
+        console.error("Discord Delete Failed:", error);
+        return false;
+    }
 }
 
 
